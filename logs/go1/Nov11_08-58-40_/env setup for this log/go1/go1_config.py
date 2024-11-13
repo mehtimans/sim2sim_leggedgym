@@ -42,15 +42,13 @@ class GO1sim2simCfg(LeggedRobotCfg):
         num_actions = 12
         num_envs = 500
         env_spacing = 3.  # not used with heightfields/trimeshes 
-        send_timeouts = False # send time out information to the algorithm 
+        send_timeouts = True # send time out information to the algorithm 
         episode_length_s = 20 # episode length in seconds
         use_ref_actions = False
 
 
     class init_state(LeggedRobotCfg.init_state):
-        pos = [0.0, 0.0, 0.8] # x,y,z [m]
-        rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
-
+        pos = [0.0, 0.0, 0.42] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
             'FL_hip_joint': 0.1,   # [rad]  
             'RL_hip_joint': 0.1,   # [rad]

@@ -46,31 +46,22 @@ import os
 
 
 class cmd:
-    vx = 0.0
+    vx = 1
     vy = 0.0
     dyaw = 0.0
 
+def quat_rotate_inverse(quat, vec):
+    shape = quat.shape
+    q_w = quat[:, -1]
+    q_vec = quat[:, :3]
+    a = vec * (2.0 * q_w ** 2 - 1.0).unsqueeze(-1)
+    b = torch.cross(q_vec, vec, dim=-1) * q_w.unsqueeze(-1) * 2.0
+    c = q_vec * \
+        torch.bmm(q_vec.view(shape[0], 1, 3), vec.view(
+            shape[0], 3, 1)).squeeze(-1) * 2.0
+    return a - b + c
 
-def quaternion_to_euler_array(x, y, z, w):
-    # Ensure quaternion is in the correct format [x, y, z, w]
-        
-    # Roll (x-axis rotation)
-    t0 = +2.0 * (w * x + y * z)
-    t1 = +1.0 - 2.0 * (x * x + y * y)
-    roll_x = np.arctan2(t0, t1)
-    
-    # Pitch (y-axis rotation)
-    t2 = +2.0 * (w * y - z * x)
-    t2 = np.clip(t2, -1.0, 1.0)
-    pitch_y = np.arcsin(t2)
-    
-    # Yaw (z-axis rotation)
-    t3 = +2.0 * (w * z + x * y)
-    t4 = +1.0 - 2.0 * (y * y + z * z)
-    yaw_z = np.arctan2(t3, t4)
-    
-    # Returns roll, pitch, yaw in a NumPy array in radians
-    return np.array([roll_x, pitch_y, yaw_z])
+
 
 def get_obs(data):
     '''Extracts an observation from the mujoco data structure
@@ -78,32 +69,22 @@ def get_obs(data):
     q = data.qpos[7:].astype(np.double)
     dq = data.qvel[6:].astype(np.double)
 
-    projected_gravity = projected_g(data)
 
     quat = data.sensor('orientation').data[[1, 2, 3, 0]].astype(np.double) # default of mujoco repo
-    quat_mujoco = data.qpos[3:7] # Gives [q_w, q_x, q_y, q_z]
-    quat_standard = quat_mujoco[[1, 2, 3, 0]] # Gives [q_x, q_y, q_z, q_w]
+    quat_mujoco = data.qpos[3:7].astype(np.double) # Gives [q_w, q_x, q_y, q_z]
+    quat_standard = quat_mujoco[[1, 2, 3, 0]].reshape(1, -1).astype(np.double) # Gives [q_x, q_y, q_z, q_w]
     print("####################################### from qpos", quat_standard)
-    print("####################################### from sensors", quat)
-
     
+    gravity_vec = np.array([[0, 0, -1]]).astype(np.double)
+    # print("####################################### from sensors", gravity_vec.dtype)
+
+    projected_gravity = quat_rotate_inverse(torch.from_numpy(quat_standard), torch.from_numpy(gravity_vec))
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ from sensors", projected_gravity)
+
     base_lin_vel = data.qvel[:3].astype(np.double)
     base_ang_vel = data.qvel[3:6].astype(np.double)
     return (q, dq, quat_standard, base_lin_vel, base_ang_vel, projected_gravity)
 
-
-def projected_g(data):
-    w, x, y, z = data.qpos[3:7]
-    euler_orientation = np.array(quaternion_to_euler_array(x, y, z, w))
-    projected_gravity_not_normalized = (
-        np.dot(_gravity_vector, euler_orientation) * euler_orientation
-    )
-    if np.linalg.norm(projected_gravity_not_normalized) == 0:
-        return projected_gravity_not_normalized
-    else:
-        return projected_gravity_not_normalized / np.linalg.norm(
-            projected_gravity_not_normalized
-        )
 
 
 def pd_control(target_q, q, kp, dq, kd):
@@ -123,6 +104,7 @@ def pd_control(target_q, q, kp, dq, kd):
                                    -1.5000, 0.1000,  1.0000, -1.5000]])
     return kp * (target_q - q + default_dof_pos ) - kd * (dq) # checking for target q
 
+
 def run_mujoco(policy, cfg):
     """
     Run the Mujoco simulation using the provided policy and configuration.
@@ -134,7 +116,6 @@ def run_mujoco(policy, cfg):
     Returns:
         None
     """
-    global _gravity_vector
     default_dof_pos_isaac = np.array([[ 0.1000,  0.8000, -1.5000, -0.1000,  0.8000, -1.5000,  0.1000,  1.0000,
          -1.5000, -0.1000,  1.0000, -1.5000]])
     
@@ -150,7 +131,6 @@ def run_mujoco(policy, cfg):
     # print("##################################################",help(data))
     mujoco.mj_step(model, data)
     viewer = mujoco_viewer.MujocoViewer(model, data)
-    _gravity_vector = np.array(model.opt.gravity)
 
     data.qpos[7:19] = qdes
     data.qpos[0:3] = pdes  
@@ -166,7 +146,6 @@ def run_mujoco(policy, cfg):
         # print("##########################################", hist_obs, cfg.env.num_single_obs)
     
     
-
     count_lowlevel = 0
     q_isaac = np.zeros(12)
     dq_isaac = np.zeros(12)
@@ -203,20 +182,12 @@ def run_mujoco(policy, cfg):
            
             obs[0, 0:3] = base_lin_vel * cfg.normalization.obs_scales.lin_vel 
             obs[0, 3:6] = base_ang_vel * cfg.normalization.obs_scales.ang_vel 
-
             obs[0, 6:9] = projected_gravity
-
             obs[0, 9:10] = cmd.vx * cfg.normalization.obs_scales.lin_vel
             obs[0, 10:11] = cmd.vy * cfg.normalization.obs_scales.lin_vel
             obs[0, 11:12] = cmd.dyaw * cfg.normalization.obs_scales.ang_vel
-            # print("################################################## base linear velocity:",cmd.vx)
-            # print("################################################## base angular velocity:",cmd.vy)
-            # print("################################################## projected gravity:",cmd.dyaw)
-        
-
             obs[0, 12:24] = (np.array(q_isaac) - default_dof_pos_isaac) * cfg.normalization.obs_scales.dof_pos 
             obs[0, 24:36] = np.array(dq_isaac) * cfg.normalization.obs_scales.dof_vel 
-
             obs[0, 36:48] = action
 
             obs = np.clip(obs, -cfg.normalization.clip_observations, cfg.normalization.clip_observations)
@@ -243,7 +214,7 @@ def run_mujoco(policy, cfg):
         tau = pd_control(target_q, q, cfg.robot_config.kps,
                     dq, cfg.robot_config.kds)  # Calc torques
         tau = np.clip(tau, -cfg.robot_config.tau_limit, cfg.robot_config.tau_limit)  # Clamp torques
-        # print("##############################################################", tau)
+        print("##############################################################", tau)
         data.ctrl = tau
         mujoco.mj_step(model, data)
         viewer.render()
@@ -278,7 +249,7 @@ if __name__ == '__main__':
             tau_limit = 200. * np.ones(12, dtype=np.double)
     
     type_load = 'load_jit'
-    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/model_3000_jit.pt"
+    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/model_best.pt"
 
     @torch.jit.export
     def reset_memory(self):

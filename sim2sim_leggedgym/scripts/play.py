@@ -55,15 +55,15 @@ def play(args):
     obs = env.get_observations()
     # load policy
     train_cfg.runner.resume = True
-    ppo_runner, train_cfg, rain_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
+    # ppo_runner, train_cfg, rain_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
     # policy = ppo_runner.get_inference_policy(device=env.device)
     policy = torch.jit.load("/home/mehtimans/sim2sim_leggedgym/logs/go1/exported/policies/policy_1.pt")
     
     # export policy as a jit module (used to run it from C++)
-    if EXPORT_POLICY:
-        path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
-        export_policy_as_jit(ppo_runner.alg.actor_critic, path)
-        print('Exported policy as jit script to: ', path)
+    # if EXPORT_POLICY:
+    #     path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
+    #     export_policy_as_jit(ppo_runner.alg.actor_critic, path)
+    #     print('Exported policy as jit script to: ', path)
 
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging
@@ -79,7 +79,7 @@ def play(args):
         actions = policy(obs.detach())
         FIX_COMMAND = True
         if FIX_COMMAND:
-            env.commands[:, 0] = 0.5    # 1.0
+            env.commands[:, 0] = 0.    # 1.0
             env.commands[:, 1] = 0.
             env.commands[:, 2] = 0.
             env.commands[:, 3] = 0.

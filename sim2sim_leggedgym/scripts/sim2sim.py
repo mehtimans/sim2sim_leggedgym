@@ -49,7 +49,7 @@ import time
 i = 0
 
 class cmd:
-    vx = 0 # 0.4
+    vx = 0.4
     vy = 0
     dyaw = 0
 
@@ -69,6 +69,7 @@ def euler_from_quaternion(w, x, y, z):
 
 def projected_g(data):
     w, x, y, z = data.qpos[3:7]
+    # print("@@##@@@@@@@@@@@@@@@@@@@",w, x, y, z)
     euler_orientation = np.array(euler_from_quaternion(w, x, y, z))
     projected_gravity_not_normalized = (
         np.dot(_gravity_vector, euler_orientation) * euler_orientation
@@ -86,6 +87,8 @@ def get_obs(data): #rl_mujoco
     base_lin_vel = vel[:3]
     base_ang_vel = vel[3:6]
     projected_gravity = projected_g(data)
+    # print("##############################################", projected_gravity)
+
     # q = data.qpos[7:].flatten() - model.key_qpos[0, 7:]
     q = data.qpos[:].flatten() #(19,)
     dq = vel[:]
@@ -115,13 +118,15 @@ def run_mujoco(policy, cfg):
          -1.5000, -0.1000,  1.0000, -1.5000]])
     qdes = np.array([0.1, 0.8, -1.5, 0.1, 1.0, -1.5, -0.1, 0.8, -1.5, -0.1, 1.0, -1.5])
     pdes = np.array([0.0, 0.0, 0.7])
-    rotdes = [0.0, 0.0, 1.0, 0.0]
+    rotdes = [1.0, 0.0, 0.0, 0.0]
 
     model = mujoco.MjModel.from_xml_path(f'{LEGGED_GYM_ROOT_DIR}/resources/robots/go1/xml/go1.xml')
 
     model.opt.timestep = cfg.sim_config.dt
     data = mujoco.MjData(model)
     _gravity_vector = np.array(model.opt.gravity)
+    print("##############################################",_gravity_vector)
+
 
     mujoco.mj_step(model, data)
 
@@ -160,6 +165,7 @@ def run_mujoco(policy, cfg):
     # for _ in tqdm(range(int(cfg.sim_config.sim_duration / cfg.sim_config.dt)), desc="Simulating..."):
     
         q, dq, base_lin_vel, base_ang_vel, projected_gravity = get_obs(data)
+        # print("##############################################", projected_gravity)
 
         q_isaac[:3] = q [10:13] # FL
         q_isaac[3:6] = q [7:10] # FR
@@ -189,8 +195,8 @@ def run_mujoco(policy, cfg):
             obs[0, 36:48] = actions
             
             obs = np.clip(obs, -cfg.normalization.clip_observations, cfg.normalization.clip_observations)
-            print('##########################################################################')
-            print('obseravtions:',obs)
+            # print('##########################################################################')
+            # print('obseravtions:',obs)
             
             hist_obs.append(obs)
             hist_obs.popleft()
@@ -204,7 +210,7 @@ def run_mujoco(policy, cfg):
             actions[:] = policy(policy_input_tensor).detach().numpy() # position
             actions = np.clip(actions, -cfg.normalization.clip_actions, cfg.normalization.clip_actions)
             target_q_isaac = actions * cfg.control.action_scale
-            print('action:',target_q_isaac)
+            # print('action:',target_q_isaac)
 
 
         target_q [:3] = target_q_isaac [3:6]
@@ -217,12 +223,12 @@ def run_mujoco(policy, cfg):
         tau = pd_control(target_q, q, cfg.robot_config.kps, dq, cfg.robot_config.kds)  
         tau = np.clip(tau, -cfg.robot_config.tau_limit, cfg.robot_config.tau_limit) 
         
-        print('------------------------------------------------')
-        print('tau:',tau[0])
+        # print('------------------------------------------------')
+        # print('tau:',tau[0])
 #         tau = np.array([ 1.37411701 , 1.84308276 , 4.17775938 ,-1.67614456, -0.75483192 , 5.82940251,
 #   0.31684411 ,-1.0548372  , 1.48736113 ,91.85062456, -1.07298884 , 4.981836  ])
         
-        data.ctrl = 0.00 * tau
+        data.ctrl = tau
         
         # data.qpos[7:8] = 0.005
 
@@ -263,7 +269,7 @@ if __name__ == '__main__':
             # [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20]
 
     type_load = 'load_jit'
-    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/model_3000.pt"
+    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/model_3000_jit.pt"
 
     @torch.jit.export
     def reset_memory(self):
