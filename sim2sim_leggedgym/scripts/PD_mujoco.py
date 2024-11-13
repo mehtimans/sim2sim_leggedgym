@@ -7,7 +7,7 @@ import copy
 from sim2sim_leggedgym import LEGGED_GYM_ROOT_DIR
 
 # Load the model and initialize simulation
-model = mujoco.MjModel.from_xml_path("/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/mjcf/quad.xml")
+model = mujoco.MjModel.from_xml_path("/home/mehtimans/sim2sim_leggedgym/resources/robots/go1/xml/go1.xml")
 model.opt.timestep = 0.0001
 data = mujoco.MjData(model)
 mujoco.mj_step(model, data)
@@ -19,8 +19,8 @@ viewer = mujoco_viewer.MujocoViewer(model, data)
 # Define PD gains for 12 joints
 # Kp = np.array([0.0000] * 12)   # Set Kd to 0 for now
 
-Kp = np.array([0.181] * 12)
-Kd = np.array([0.0000] * 12)   # Set Kd to 0 for now
+Kp = np.array([200] * 12)
+Kd = np.array([0.1] * 12)   # Set Kd to 0 for now
 
 # Desired positions for each of the 12 joints
 # qdes = np.array([0.0] * 12)  # Example desired joint positions (adjust as needed)
@@ -53,8 +53,8 @@ while True:
         # print(sim.data.qpos.shape)
 
         # Get current joint positions and velocities for the first 12 actuated joints
-        qpos = data.qpos[:12]  # First 12 elements correspond to joint positions
-        qvel = data.qvel[:12]  # First 12 elements correspond to joint velocities
+        qpos = data.qpos[7:19]  # First 12 elements correspond to joint positions
+        qvel = data.qvel[6:18]  # First 12 elements correspond to joint velocities
 
 
         # PD control law

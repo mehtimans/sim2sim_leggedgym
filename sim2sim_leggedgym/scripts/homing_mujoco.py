@@ -7,7 +7,7 @@ import copy
 from sim2sim_leggedgym import LEGGED_GYM_ROOT_DIR
 
 # Load the model and initialize simulation
-model = mujoco.MjModel.from_xml_path("/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/mjcf/quad.xml")
+model = mujoco.MjModel.from_xml_path("/home/mehtimans/sim2sim_leggedgym/resources/robots/go1/xml/go1.xml")
 model.opt.timestep = 0.0001
 data = mujoco.MjData(model)
 mujoco.mj_step(model, data)
@@ -17,8 +17,8 @@ viewer = mujoco_viewer.MujocoViewer(model, data)
 # qdes = np.array([0.0] * 12)  # Example desired joint positions (adjust as needed)
 # Desired positions for each of the 12 joints
 qdes = np.array([0.1, 0.8, -1.5, 0.1, 1.0, -1.5, -0.1, 0.8, -1.5, -0.1, 1.0, -1.5])
-pdes = np.array([0.0, 0.0, 0.32])
-rotdes = [0.0, 0.0, 0.0, 1.0]
+pdes = np.array([0.0, 0.0, 0.32])# x y z
+rotdes = [0.0, 0.0, 0.0, 1.0] # w x y z
 
 # Set initial joint positions directly to qdes
 data.qpos[7:19] = qdes  # Modify qpos values for the DOFs you want to home
@@ -41,6 +41,9 @@ for i in range(model.njnt):
     joint_qposadr = model.jnt_qposadr[i]  # qpos index for the joint
     joint_qveladr = model.jnt_dofadr[i]   # qvel index for the joint
     print(f"Joint {i}: Name = {joint_name}, Type = {joint_type}, qpos index: {joint_qposadr}, qvel index: {joint_qveladr}")
+
+joint_names = [model.joint(j).name for j in range(model.njnt)]  # model.njnt gives the number of joints
+print("Joint positions:", joint_names)
 
 # Print all body names
 print("Body Names:")

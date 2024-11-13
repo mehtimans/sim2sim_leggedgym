@@ -42,14 +42,17 @@ def train(args):
     env, env_cfg, env_cfg_dict = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg, train_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args)
     ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
-
+    
+    ########### saving configuration setup
     config_dict = {
-        "env_cfg" : env_cfg_dict,
-        "train_cfg" : train_cfg_dict
+        "environment configuration" : env_cfg_dict,
+        "training configuration" : train_cfg_dict
     }
     
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as file:
         yaml.dump(config_dict, file)
+
+    
 
 if __name__ == '__main__':
     args = get_args()

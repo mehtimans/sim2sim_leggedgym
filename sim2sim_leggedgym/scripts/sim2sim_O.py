@@ -46,15 +46,14 @@ import os
 
 
 class cmd:
-    vx = 0.4
+    vx = 0.0
     vy = 0.0
     dyaw = 0.0
 
 
-def quaternion_to_euler_array(quat):
+def quaternion_to_euler_array(x, y, z, w):
     # Ensure quaternion is in the correct format [x, y, z, w]
-    x, y, z, w = quat
-    
+        
     # Roll (x-axis rotation)
     t0 = +2.0 * (w * x + y * z)
     t1 = +1.0 - 2.0 * (x * x + y * y)
@@ -76,24 +75,53 @@ def quaternion_to_euler_array(quat):
 def get_obs(data):
     '''Extracts an observation from the mujoco data structure
     '''
-    q = data.qpos.astype(np.double)
-    dq = data.qvel.astype(np.double)
-    quat = data.sensor('orientation').data[[1, 2, 3, 0]].astype(np.double)
-    r = R.from_quat(quat)
-    v = r.apply(data.qvel[:3], inverse=True).astype(np.double)  # In the base frame
-    omega = data.sensor('angular-velocity').data.astype(np.double)
-    linvelocity = data.sensor('linear-velocity').data.astype(np.double)
-    gvec = r.apply(np.array([0., 0., -1.]), inverse=True).astype(np.double)
-    return (q, dq, quat, v, omega, gvec, linvelocity)
+    q = data.qpos[7:].astype(np.double)
+    dq = data.qvel[6:].astype(np.double)
+
+    projected_gravity = projected_g(data)
+
+    quat = data.sensor('orientation').data[[1, 2, 3, 0]].astype(np.double) # default of mujoco repo
+    quat_mujoco = data.qpos[3:7] # Gives [q_w, q_x, q_y, q_z]
+    quat_standard = quat_mujoco[[1, 2, 3, 0]] # Gives [q_x, q_y, q_z, q_w]
+    print("####################################### from qpos", quat_standard)
+    print("####################################### from sensors", quat)
+
+    
+    base_lin_vel = data.qvel[:3].astype(np.double)
+    base_ang_vel = data.qvel[3:6].astype(np.double)
+    return (q, dq, quat_standard, base_lin_vel, base_ang_vel, projected_gravity)
 
 
-def pd_control(target_q, q, kp, target_dq, dq, kd):
+def projected_g(data):
+    w, x, y, z = data.qpos[3:7]
+    euler_orientation = np.array(quaternion_to_euler_array(x, y, z, w))
+    projected_gravity_not_normalized = (
+        np.dot(_gravity_vector, euler_orientation) * euler_orientation
+    )
+    if np.linalg.norm(projected_gravity_not_normalized) == 0:
+        return projected_gravity_not_normalized
+    else:
+        return projected_gravity_not_normalized / np.linalg.norm(
+            projected_gravity_not_normalized
+        )
+
+
+def pd_control(target_q, q, kp, dq, kd):
     '''Calculates torques from position commands
     '''
     # return (target_q - q) * kp + (target_dq - dq) * kd
-    default_dof_pos = np.array([[ 0.1000,  0.8000, -1.5000, -0.1000,  0.8000, -1.5000,  0.1000,  1.0000,
-                                   -1.5000, -0.1000,  1.0000, -1.5000]])
-    return kp * (target_q - q + default_dof_pos ) - kd * (dq)
+
+    # mujoco ['FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint', 'FL_hip_joint', 'FL_thigh_joint',
+    #         'FL_calf_joint', 'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint', 'RL_hip_joint', 
+    #         'RL_thigh_joint', 'RL_calf_joint']
+
+    # isaac gym ['FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint', 'FR_hip_joint', 'FR_thigh_joint',
+    #            'FR_calf_joint', 'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint', 'RR_hip_joint', 
+    #            'RR_thigh_joint', 'RR_calf_joint']
+
+    default_dof_pos = np.array([[ -0.1000,  0.8000, -1.5000, 0.1000,  0.8000, -1.5000,  -0.1000,  1.0000,
+                                   -1.5000, 0.1000,  1.0000, -1.5000]])
+    return kp * (target_q - q + default_dof_pos ) - kd * (dq) # checking for target q
 
 def run_mujoco(policy, cfg):
     """
@@ -106,20 +134,31 @@ def run_mujoco(policy, cfg):
     Returns:
         None
     """
+    global _gravity_vector
+    default_dof_pos_isaac = np.array([[ 0.1000,  0.8000, -1.5000, -0.1000,  0.8000, -1.5000,  0.1000,  1.0000,
+         -1.5000, -0.1000,  1.0000, -1.5000]])
+    
+    ### des
+    qdes = np.array([[ -0.1000,  0.8000, -1.5000, 0.1000,  0.8000, -1.5000,  -0.1000,  1.0000,
+                                   -1.5000, 0.1000,  1.0000, -1.5000]])
+    pdes = np.array([0.0, 0.0, 0.32])
+    rotdes = np.array([0.0, 0.0, 0.0, 1.0]) # x y z w
+
     model = mujoco.MjModel.from_xml_path(cfg.sim_config.mujoco_model_path)
     model.opt.timestep = cfg.sim_config.dt
     data = mujoco.MjData(model)
     # print("##################################################",help(data))
     mujoco.mj_step(model, data)
     viewer = mujoco_viewer.MujocoViewer(model, data)
+    _gravity_vector = np.array(model.opt.gravity)
+
+    data.qpos[7:19] = qdes
+    data.qpos[0:3] = pdes  
+    data.qpos[3:7] = rotdes[[3, 0, 1, 2]] # w x y z 
 
     target_q = np.zeros((cfg.env.num_actions), dtype=np.double)
     action = np.zeros((cfg.env.num_actions), dtype=np.double)
     
-    #### from legged gym config
-    default_dof_pos = np.array([[ 0.1000,  0.8000, -1.5000, -0.1000,  0.8000, -1.5000,  0.1000,  1.0000,
-                                   -1.5000, -0.1000,  1.0000, -1.5000]])
-
 
     hist_obs = deque()
     for _ in range(cfg.env.frame_stack):
@@ -138,21 +177,22 @@ def run_mujoco(policy, cfg):
     #for _ in tqdm(range(int(cfg.sim_config.sim_duration / cfg.sim_config.dt)), desc="Simulating..."):
         
         # Obtain an observation
-        q, dq, quat, v, omega, gvec, linvelocity = get_obs(data)    
-        #print("##################################################",len(q))
-        q [10:13] = np.array(q_isaac[:3]) #FL
-        q [7:10] = q_isaac[3:6] #FR
-        q [16:19] = q_isaac [6:9] #RL
-        q [13:16] = q_isaac [9:12] #RR
-        q = q[7:19]
-
+        q, dq, quat, base_lin_vel, base_ang_vel, projected_gravity = get_obs(data)    
+        # print("################################################## base linear velocity:",base_lin_vel)
+        # print("################################################## base angular velocity:",base_ang_vel)
+        # print("################################################## projected gravity:",projected_gravity)
         
-        dq [9:12] = dq_isaac [:3]
-        dq [6:9] = dq_isaac [3:6]
-        dq [15:18] = dq_isaac [6:9]
-        dq [12:15] = dq_isaac [9:12]
+        q_isaac[: 3] = q [3: 6] # FL
+        q_isaac[3: 6] = q [: 3] # FR
+        q_isaac [6: 9] = q [9: 12] # RL
+        q_isaac [9: 12] = q [6: 9] # RR
         
-        dq = dq[6:18]
+        
+        dq_isaac [: 3] = dq [3: 6]
+        dq_isaac [3: 6] = dq [: 3]
+        dq_isaac [6: 9] = dq [9: 12]
+        dq_isaac [9: 12] = dq [6: 9]
+        
         # print("#########$$$$$$$$$$$$$$$", dq[18])
         
         ####
@@ -161,16 +201,20 @@ def run_mujoco(policy, cfg):
            
             obs = np.zeros([1, cfg.env.num_single_obs], dtype=np.float32)
            
-            obs[0, 0:3] = v * cfg.normalization.obs_scales.lin_vel 
-            obs[0, 3:6] = omega * cfg.normalization.obs_scales.ang_vel 
+            obs[0, 0:3] = base_lin_vel * cfg.normalization.obs_scales.lin_vel 
+            obs[0, 3:6] = base_ang_vel * cfg.normalization.obs_scales.ang_vel 
 
-            obs[0, 6:9] = gvec
+            obs[0, 6:9] = projected_gravity
 
             obs[0, 9:10] = cmd.vx * cfg.normalization.obs_scales.lin_vel
             obs[0, 10:11] = cmd.vy * cfg.normalization.obs_scales.lin_vel
             obs[0, 11:12] = cmd.dyaw * cfg.normalization.obs_scales.ang_vel
+            # print("################################################## base linear velocity:",cmd.vx)
+            # print("################################################## base angular velocity:",cmd.vy)
+            # print("################################################## projected gravity:",cmd.dyaw)
+        
 
-            obs[0, 12:24] = (np.array(q_isaac) - default_dof_pos) * cfg.normalization.obs_scales.dof_pos 
+            obs[0, 12:24] = (np.array(q_isaac) - default_dof_pos_isaac) * cfg.normalization.obs_scales.dof_pos 
             obs[0, 24:36] = np.array(dq_isaac) * cfg.normalization.obs_scales.dof_vel 
 
             obs[0, 36:48] = action
@@ -188,20 +232,18 @@ def run_mujoco(policy, cfg):
             action = np.clip(action, -cfg.normalization.clip_actions, cfg.normalization.clip_actions)
             target_q_isaac = action * cfg.control.action_scale
 
-        # target_q_isaac [3:6] = target_q [:3]
-        # target_q_isaac [:3] = target_q [3:6]
-        # target_q_isaac [9:12] = target_q [6:9]
-        # target_q_isaac [6:9] = target_q [9:12]
+
         target_q [:3] = target_q_isaac [3:6]
         target_q [3:6] = target_q_isaac [:3]
         target_q [6:9] = target_q_isaac [9:12]
         target_q [9:12] = target_q_isaac [6:9]
 
-        target_dq = np.zeros((cfg.env.num_actions), dtype=np.double)
+        # target_dq = np.zeros((cfg.env.num_actions), dtype=np.double)
         # Generate PD control
         tau = pd_control(target_q, q, cfg.robot_config.kps,
-                    target_dq, dq, cfg.robot_config.kds)  # Calc torques
+                    dq, cfg.robot_config.kds)  # Calc torques
         tau = np.clip(tau, -cfg.robot_config.tau_limit, cfg.robot_config.tau_limit)  # Clamp torques
+        # print("##############################################################", tau)
         data.ctrl = tau
         mujoco.mj_step(model, data)
         viewer.render()
@@ -223,19 +265,21 @@ if __name__ == '__main__':
 
         class sim_config:
             if args.terrain:
-                mujoco_model_path = f'{LEGGED_GYM_ROOT_DIR}/resources/robots/iust/mjcf/quad.xml'
+                mujoco_model_path = f'{LEGGED_GYM_ROOT_DIR}/resources/robots/go1/xml/go1.xml'
             else:
-                mujoco_model_path = f'{LEGGED_GYM_ROOT_DIR}/resources/robots/iust/mjcf/quad.xml'
+                mujoco_model_path = f'{LEGGED_GYM_ROOT_DIR}/resources/robots/go1/xml/go1.xml'
             sim_duration = 60.0
-            dt = 0.00001
-            decimation = 10
+            dt = 0.005
+            decimation = 4
         
         class robot_config:
-            kps = np.array([200, 200, 350, 350, 15, 15, 200, 200, 350, 350, 15, 15], dtype=np.double)
-            kds = np.array([10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10], dtype=np.double)
+            kps = np.array([20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20], dtype=np.double)
+            kds = np.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], dtype=np.double)
             tau_limit = 200. * np.ones(12, dtype=np.double)
-    type_load = 'load_nn'
-    path = "/home/mehtimans/sim2sim_leggedgym/logs/rough_iust/Nov04_18-38-25_/model_1500.pt"
+    
+    type_load = 'load_jit'
+    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/model_3000_jit.pt"
+
     @torch.jit.export
     def reset_memory(self):
         self.hidden_state[:] = 0.
@@ -244,27 +288,31 @@ if __name__ == '__main__':
     def export_policy_as_jit(actor_critic, path):
         directory = os.path.dirname(path)
         os.makedirs(directory, exist_ok=True)
-        path = os.path.join(path, "model_1500.pt")
+        path = os.path.join(path, "model_3000_jit.pt")
         model = copy.deepcopy(actor_critic.actor).to("cpu")
         traced_script_module = torch.jit.script(model)
         traced_script_module.save(path)
         print(f"Model saved as jit: {path}")
-    
+
 
     if type_load == 'load_nn':
+        print('path:',path)
         loaded_dict = torch.load(path)
         actor_critic = ActorCritic(720, 144, 12,[512,256,128],[512,256,128])
+        # policy = PPO(actor_critic = actor_critic)
         actor_critic.load_state_dict(loaded_dict['model_state_dict'])
         actor_critic.eval()
         actor_critic.to('cpu')
         policy = actor_critic.act_inference
 
     elif type_load == 'load_jit':
-        actor_critic = ActorCritic(720, 144, 12,[512,256,128],[512,256,128])
-        export_policy_as_jit(actor_critic, path)
-        policy_net_file = "{LEGGED_GYM_ROOT_DIR}/logs/rough_iust/Nov04_18-38-25_/model_1500.pt"
-        policy_network_path = policy_net_file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
-        policy = torch.jit.load(policy_network_path)
+        # actor_critic = ActorCritic(720, 144, 12,[512,256,128],[512,256,128])
+        # export_policy_as_jit(actor_critic, "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/")
+        # policy_net_file = "{LEGGED_GYM_ROOT_DIR}/sim2sim_leggedgym/logs/rough_iust/Nov6-48-48-highreward.pt"
+        # policy_network_path = policy_net_file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
+        # print(policy_network_path)
+        # print('-----------------------------')
+        policy = torch.jit.load(path)
 
     print('policy loaded!...')
     run_mujoco(policy, Sim2simCfg())

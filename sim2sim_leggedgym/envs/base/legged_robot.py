@@ -101,7 +101,7 @@ class LeggedRobot(BaseTask):
 
         for _ in range(self.cfg.control.decimation):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape)
-            # print('torque:',self.torques)
+            # print('######################################################################torque:',self.torques)
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
             self.gym.simulate(self.sim)
 
@@ -139,6 +139,10 @@ class LeggedRobot(BaseTask):
         self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        # print("##########################################################", self.projected_gravity)
+        # print("##########################################################", self.base_quat)
+
+
         self.base_euler_xyz = get_euler_xyz_tensor(self.base_quat)
 
         self._post_physics_step_callback()
@@ -561,6 +565,7 @@ class LeggedRobot(BaseTask):
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
+        # print("###############$$$$$$$ gravity vector in global framework", self.gravity_vec)
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
         self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
@@ -576,6 +581,7 @@ class LeggedRobot(BaseTask):
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
         self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        # print("##########################################################", self.projected_gravity)
         # self.last_rigid_state = torch.zeros_like(self.rigid_state) #change
         if self.cfg.terrain.measure_heights:
             self.height_points = self._init_height_points()
@@ -602,7 +608,7 @@ class LeggedRobot(BaseTask):
                 if self.cfg.control.control_type in ["P", "V"]:
                     print(f"PD gain of joint {name} were not defined, setting them to zero")
         
-
+        # print("############################################ default dof positions", self.default_dof_pos)
         self.rand_push_force = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self.rand_push_torque = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
         self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
@@ -735,6 +741,7 @@ class LeggedRobot(BaseTask):
         # body names: ['base', 'FL_hip', 'FL_thigh', 'FL_calf', 'FL_foot', 'FR_hip', 'FR_thigh', 'FR_calf', 'FR_foot', 'RL_hip', 'RL_thigh', 'RL_calf', 'RL_foot', 'RR_hip', 'RR_thigh', 'RR_calf', 'RR_foot']
         print("#########################body names", body_names)
         self.dof_names = self.gym.get_asset_dof_names(robot_asset) 
+        print("############################################################################", self.dof_names)
         # dof names:['FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint', 'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint', 'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint', 'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint']
         self.num_bodies = len(body_names) # 17
         self.num_dofs = len(self.dof_names) # 12
