@@ -176,7 +176,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/trunk.dae" scale="1. 1.2 1."/> <!--"0.9 1.15 1."-->
+        <mesh filename="../meshes/trunk.dae" scale="1. 1.2 1."/> <!--"0.9 1.15 1."-->
         <!-- <box size="0.3 0.2 0.093"/> -->
       </geometry>
       <material name="orange"/>
@@ -232,7 +232,7 @@
     <visual>
       <origin rpy="3.14159265359 0 0" xyz="0 0 0"/> <!--no edit-->
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/hip.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/hip.dae" scale="1 1 1"/>
         <!-- <box size="0.09 0.08 0.093"/>  -->
       </geometry>
       <material name="gold"/>
@@ -275,7 +275,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/thigh_mirror.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/thigh_mirror.dae" scale="1 1 1"/>
         <!-- <box size="0.043 0.034 0.22"/> -->
       </geometry>
       <material name="orange"/>
@@ -304,7 +304,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/calf.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/calf.dae" scale="1 1 1"/>
         <!-- <box size="0.016 0.016 0.2"/> -->
       </geometry>
       <material name="orange"/>
@@ -357,7 +357,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust//meshes/hip.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/hip.dae" scale="1 1 1"/>
         <!-- <box size="0.09 0.08 0.093"/> -->
       </geometry>
       <material name="orange"/>
@@ -400,7 +400,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/thigh.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/thigh.dae" scale="1 1 1"/>
         <!-- <box size="0.043 0.034 0.22"/> -->
       </geometry>
       <material name="orange"/>
@@ -429,7 +429,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/calf.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/calf.dae" scale="1 1 1"/>
         <!-- <box size="0.016 0.016 0.2"/> -->
       </geometry>
       <material name="orange"/>
@@ -482,7 +482,7 @@
     <visual>
       <origin rpy="3.14159265359 3.14159265359 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/hip.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/hip.dae" scale="1 1 1"/>
         <!-- <box size="0.09 0.08 0.093"/> -->
       </geometry>
       <material name="orange"/>
@@ -525,7 +525,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/thigh_mirror.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/thigh_mirror.dae" scale="1 1 1"/>
         <!-- <box size="0.043 0.034 0.22"/> -->
       </geometry>
       <material name="orange"/>
@@ -554,7 +554,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/calf.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/calf.dae" scale="1 1 1"/>
         <!-- <box size="0.016 0.016 0.2"/> -->
       </geometry>
       <material name="orange"/>
@@ -607,7 +607,7 @@
     <visual>
       <origin rpy="0 3.14159265359 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/hip.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/hip.dae" scale="1 1 1"/>
         <!-- <box size="0.09 0.08 0.093"/> -->
       </geometry>
       <material name="orange"/>
@@ -650,7 +650,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/thigh.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/thigh.dae" scale="1 1 1"/>
         <!-- <box size="0.043 0.034 0.22"/> -->
       </geometry>
       <material name="orange"/>
@@ -679,7 +679,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="/home/mehtimans/sim2sim_leggedgym/resources/robots/iust/meshes/calf.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/calf.dae" scale="1 1 1"/>
         <!-- <box size="0.016 0.016 0.2"/> -->
       </geometry>
       <material name="orange"/>
