@@ -1015,3 +1015,6 @@ WARNING: Nan, Inf or huge value in QACC at DOF 16. The simulation is unstable. T
 Mon Nov 11 14:59:51 2024
 WARNING: mju_openResource: unknown file '/home/lenovo/sim_leggedgym/resources/mjcf/go1.xml'
 
+Wed Nov 13 18:41:26 2024
+WARNING: mju_openResource: unknown file '/home/mehtimans/sim2sim_leggedgym/resources/robots/go1/xml/go1_or.xml'
+

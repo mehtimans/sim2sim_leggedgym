@@ -514,7 +514,7 @@ class LeggedRobot(BaseTask):
         Returns:
             [torch.Tensor]: Vector of scales used to multiply a uniform distribution in [-1, 1]
         """
-        noise_vec = torch.zeros_like(self.obs_buf[0])
+        noise_vec = torch.zeros(self.num_envs, 48)
         self.add_noise = self.cfg.noise.add_noise
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
@@ -528,6 +528,7 @@ class LeggedRobot(BaseTask):
         # print(np.shape('-----noise vec------',noise_vec))
         if self.cfg.terrain.measure_heights:
             noise_vec[48:235] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
+        # print("$$$$$$%%%%%%%%%%%%%%%%%%%%%%%%%%%%5get",np.shape(noise_vec))
         return noise_vec
 
     #--------------------------scales--------------
@@ -564,6 +565,7 @@ class LeggedRobot(BaseTask):
         self.common_step_counter = 0
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
+        print("%$$$$$$$$$$$$$ noise_scale_vec in init buffers", np.shape(self.noise_scale_vec))
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         # print("###############$$$$$$$ gravity vector in global framework", self.gravity_vec)
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))

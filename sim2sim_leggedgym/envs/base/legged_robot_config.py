@@ -120,15 +120,15 @@ class LeggedRobotCfg(BaseConfig):
 
     class domain_rand:
         randomize_friction = True
-        friction_range = [0.5, 1.25]
-        randomize_base_mass = False
-        added_mass_range = [-1., 1.]
+        friction_range = [0.4, 1.5] # [0.5 1.25]
+        randomize_base_mass = True
+        added_mass_range = [-0.8, 1.2] # [-1 1]
         push_robots = True
-        push_interval_s = 15
-        max_push_vel_xy = 1.
+        push_interval_s = 18 # 15
+        max_push_vel_xy = 1.4 # 1
         action_delay = 0.5
-        action_noise = 0.02
-        dynamic_randomization = 0.04
+        action_noise = 0.028 # 0.02
+        dynamic_randomization = 0.056 # 0.04
 
     class rewards:
         class scales:
@@ -167,15 +167,15 @@ class LeggedRobotCfg(BaseConfig):
         clip_actions = 100.
 
     class noise:
-        add_noise = False
-        noise_level = 1.0 # scales other values
+        add_noise = True
+        noise_level = 1.4 # scales other values
         class noise_scales:
-            dof_pos = 0.01
-            dof_vel = 1.5
-            lin_vel = 0.1
-            ang_vel = 0.2
+            dof_pos = 0.014 #0.01
+            dof_vel = 2.1   #1.5
+            lin_vel = 0.14  #0.14
+            ang_vel = 0.28  #0.28
             gravity = 0.05
-            height_measurements = 0.1
+            height_measurements = 0.14
 
     # viewer camera:
     class viewer:

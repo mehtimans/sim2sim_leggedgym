@@ -177,7 +177,7 @@ class IUSTFreeEnv(LeggedRobot):
         Returns:
             [torch.Tensor]: Vector of scales used to multiply a uniform distribution in [-1, 1]
         """
-        noise_vec = torch.zeros_like(self.obs_buf[0])
+        noise_vec = torch.zeros(self.num_envs, 48)
         # print("######################################3", np.shape(noise_vec))
         self.add_noise = self.cfg.noise.add_noise
         noise_scales = self.cfg.noise.noise_scales
@@ -259,10 +259,13 @@ class IUSTFreeEnv(LeggedRobot):
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
             self.privileged_obs_buf = torch.cat((self.privileged_obs_buf, heights), dim=-1)
-        # print("################################################",np.shape(self.noise_scale_vec))
+        print("################################################",np.shape(self.noise_scale_vec))
+        print("################################################",np.shape(obs_buf))
+        print("################################################",np.shape(torch.randn_like(obs_buf)))
+
         if self.add_noise:  
             obs_buf = obs_buf + torch.randn_like(obs_buf) * self.noise_scale_vec * self.cfg.noise.noise_level
-
+         
         self.obs_history.append(obs_buf.clone())
         # print('obs history:',np.shape(self.obs_history))
         self.critic_history.append(self.privileged_obs_buf.clone())
