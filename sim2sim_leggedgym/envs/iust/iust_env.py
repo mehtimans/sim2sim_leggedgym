@@ -197,11 +197,13 @@ class IUSTFreeEnv(LeggedRobot):
     def step(self, actions):
         if self.cfg.env.use_ref_actions:
             actions += self.ref_action
+        actions = torch.clip(actions, -self.cfg.normalization.clip_actions, self.cfg.normalization.clip_actions)
         # dynamic randomization
-        delay = torch.rand((self.num_envs, 1), device=self.device)
+        # delay = torch.rand((self.num_envs, 1), device=self.device) * self.cfg.domain_rand.action_delay
         actions = actions.to(device=self.device)
-        actions = (1 - delay) * actions + delay * self.actions
+        # actions = (1 - delay) * actions + delay * self.actions
         actions += self.cfg.domain_rand.action_noise * torch.randn_like(actions) * actions
+        # print("#####################################")
         return super().step(actions)
     
 

@@ -293,7 +293,7 @@
     </inertial>
   </link>
   <joint name="FR_calf_joint" type="revolute">
-    <origin rpy="0 0 0" xyz="0 -0.07125 -0.21183"/>
+    <origin rpy="0 0 0" xyz="0 -0.07125 -0.21183"/>  
     <parent link="FR_thigh"/>
     <child link="FR_calf"/>
     <axis xyz="0 1 0"/>
