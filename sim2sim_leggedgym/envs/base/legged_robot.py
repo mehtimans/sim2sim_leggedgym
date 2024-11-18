@@ -514,7 +514,7 @@ class LeggedRobot(BaseTask):
         Returns:
             [torch.Tensor]: Vector of scales used to multiply a uniform distribution in [-1, 1]
         """
-        noise_vec = torch.zeros(self.num_envs, 48)
+        noise_vec = torch.zeros(48)
         self.add_noise = self.cfg.noise.add_noise
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
@@ -565,7 +565,7 @@ class LeggedRobot(BaseTask):
         self.common_step_counter = 0
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
-        print("%$$$$$$$$$$$$$ noise_scale_vec in init buffers", np.shape(self.noise_scale_vec))
+        # print("%$$$$$$$$$$$$$ noise_scale_vec in init buffers", np.shape(self.noise_scale_vec))
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         # print("###############$$$$$$$ gravity vector in global framework", self.gravity_vec)
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
@@ -741,9 +741,9 @@ class LeggedRobot(BaseTask):
         # save body names from the asset
         body_names = self.gym.get_asset_rigid_body_names(robot_asset) 
         # body names: ['base', 'FL_hip', 'FL_thigh', 'FL_calf', 'FL_foot', 'FR_hip', 'FR_thigh', 'FR_calf', 'FR_foot', 'RL_hip', 'RL_thigh', 'RL_calf', 'RL_foot', 'RR_hip', 'RR_thigh', 'RR_calf', 'RR_foot']
-        print("#########################body names", body_names)
+        # print("#########################body names", body_names)
         self.dof_names = self.gym.get_asset_dof_names(robot_asset) 
-        print("############################################################################", self.dof_names)
+        # print("############################################################################", self.dof_names)
         # dof names:['FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint', 'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint', 'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint', 'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint']
         self.num_bodies = len(body_names) # 17
         self.num_dofs = len(self.dof_names) # 12

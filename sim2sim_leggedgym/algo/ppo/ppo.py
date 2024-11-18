@@ -56,7 +56,6 @@ class PPO:
                  ):
 
         self.device = device
-        print("######################################################################")
         self.desired_kl = desired_kl
         self.schedule = schedule
         self.learning_rate = learning_rate

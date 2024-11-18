@@ -178,7 +178,7 @@ class GO1FreeEnv(LeggedRobot):
             [torch.Tensor]: Vector of scales used to multiply a uniform distribution in [-1, 1]
         """
         noise_vec = torch.zeros(48)
-        print("######################################3", np.shape(noise_vec))
+        # print("######################################3", np.shape(noise_vec))
         self.add_noise = self.cfg.noise.add_noise
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
