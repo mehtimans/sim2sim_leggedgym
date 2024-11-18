@@ -255,7 +255,7 @@ if __name__ == '__main__':
             tau_limit = 200. * np.ones(12, dtype=np.double)
     
     type_load = 'load_jit'
-    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/model_best.pt"
+    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/23_sim2sim_first.pt"
 
     @torch.jit.export
     def reset_memory(self):

@@ -40,7 +40,8 @@ import torch
 
 def train(args):
     env, env_cfg, env_cfg_dict = task_registry.make_env(name=args.task, args=args)
-    ppo_runner, train_cfg, train_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args)
+    ppo_runner, train_cfg, train_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args)    
+    ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
     
     ########### saving configuration setup
     config_dict = {
@@ -50,10 +51,6 @@ def train(args):
     
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as file:
         yaml.dump(config_dict, file)
-        
-        
-    ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
-    
     
 
     
