@@ -55,9 +55,9 @@ def play(args):
     obs = env.get_observations()
     # load policy
     train_cfg.runner.resume = True
-    # ppo_runner, train_cfg, rain_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
-    # policy = ppo_runner.get_inference_policy(device=env.device)
-    policy = torch.jit.load("/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/23_sim2sim_first.pt")
+    ppo_runner, train_cfg, rain_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
+    policy = ppo_runner.get_inference_policy(device=env.device)
+    # policy = torch.jit.load("/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/23_sim2sim_first.pt")
     
     # export policy as a jit module (used to run it from C++)
     # if EXPORT_POLICY:

@@ -30,6 +30,7 @@
 
 import numpy as np
 import os
+import matplotlib.pyplot as plt
 from datetime import datetime
 import yaml
 
@@ -51,9 +52,7 @@ def train(args):
     
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as file:
         yaml.dump(config_dict, file)
-    
 
-    
 
 if __name__ == '__main__':
     args = get_args()

@@ -35,6 +35,8 @@ import numpy as np
 import random
 from isaacgym import gymapi
 from isaacgym import gymutil
+from datetime import datetime
+
 
 from sim2sim_leggedgym import LEGGED_GYM_ROOT_DIR, LEGGED_GYM_ENVS_DIR
 
@@ -104,7 +106,9 @@ def get_load_path(root, load_run=-1, checkpoint=-1):
     try:
         runs = os.listdir(root)
         #TODO sort by date to handle change of month
-        runs.sort()
+        # runs.sort()
+        runs.sort(key=lambda x: datetime.strptime(x, "%b%d_%H-%M-%S_"))
+
         if 'exported' in runs: runs.remove('exported')
         last_run = os.path.join(root, runs[-1])
     except:
@@ -165,11 +169,13 @@ def get_args():
         {"name": "--seed", "type": int, "help": "Random seed. Overrides config file if provided."},
         {"name": "--max_iterations", "type": int, "help": "Maximum number of training iterations. Overrides config file if provided."},
     ]
+    
+
     # parse arguments
     args = gymutil.parse_arguments(
         description="RL Policy",
         custom_parameters=custom_parameters)
-
+    # print("##################################################### args", args, type(args))
     # name allignment
     args.sim_device_id = args.compute_device_id
     args.sim_device = args.sim_device_type

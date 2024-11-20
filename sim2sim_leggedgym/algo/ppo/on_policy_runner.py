@@ -40,6 +40,8 @@ from .ppo import PPO
 from .actor_critic import ActorCritic
 from sim2sim_leggedgym.algo.vec_env import VecEnv
 
+import matplotlib.pyplot as plt
+
 
 class OnPolicyRunner:
 
@@ -215,6 +217,28 @@ class OnPolicyRunner:
                 mean_reward = statistics.mean(locs['rewbuffer']) 
                 f.write(f"{mean_reward}\n")
         
+                # plot the mean reward
+                plt_iterations = []
+                plt_mean_rewards = []
+                
+                with open(os.path.join(self.log_dir,'mean_rewards.txt'), 'r') as f:
+                    
+                    for index, line in enumerate(f):
+                        plt_mean_reward  = (line.strip())
+                        plt_mean_reward = float(plt_mean_reward)
+                        plt_iterations.append(index + 1)
+                        plt_mean_rewards.append(plt_mean_reward)
+
+
+                plt.figure(figsize=(10, 6))
+                plt.plot(plt_iterations, plt_mean_rewards, marker='.', linestyle='-', color='b')
+                plt.title('Mean Reward by Iteration')
+                plt.xlabel('Iteration')
+                plt.ylabel('Mean Reward')
+                plt.grid(True)
+                plt.savefig(os.path.join(self.log_dir,'mean_rewards_fig.png'))
+                plt.close()
+                
         print(log_string)
 
     def save(self, path, infos=None):
