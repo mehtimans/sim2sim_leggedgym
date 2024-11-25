@@ -322,6 +322,11 @@ class LeggedRobot(BaseTask):
 
             for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
+            
+            #### modified 
+            self.env_frictions[env_id] = self.friction_coeffs[env_id]
+            ####
+            
         return props
 
     def _process_dof_props(self, props, env_id):
@@ -564,7 +569,7 @@ class LeggedRobot(BaseTask):
         # initialize some data used later on
         self.common_step_counter = 0
         self.extras = {}
-        self.noise_scale_vec = (self._get_noise_scale_vec(self.cfg)).to(device=self.device)
+        self.noise_scale_vec = self._get_noise_scale_vec(self.cfg).to(device=self.device)
         # print("%$$$$$$$$$$$$$ noise_scale_vec in init buffers", np.shape(self.noise_scale_vec))
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         # print("###############$$$$$$$ gravity vector in global framework", self.gravity_vec)

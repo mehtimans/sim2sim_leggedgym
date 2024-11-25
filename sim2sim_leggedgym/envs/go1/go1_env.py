@@ -207,9 +207,10 @@ class GO1FreeEnv(LeggedRobot):
             actions += self.ref_action
         actions = torch.clip(actions, -self.cfg.normalization.clip_actions, self.cfg.normalization.clip_actions)
         # dynamic randomization
-        # delay = torch.rand((self.num_envs, 1), device=self.device) * self.cfg.domain_rand.action_delay
+        delay = torch.rand((self.num_envs, 1), device=self.device) * self.cfg.domain_rand.action_delay
+        # delay = torch.rand((self.num_envs, 1), device=self.device)
         actions = actions.to(device=self.device)
-        # actions = (1 - delay) * actions + delay * self.actions
+        actions = (1 - delay) * actions + delay * self.actions
         actions += self.cfg.domain_rand.action_noise * torch.randn_like(actions) * actions
         # print("#####################################")
         return super().step(actions)
@@ -233,35 +234,25 @@ class GO1FreeEnv(LeggedRobot):
         dq = self.dof_vel * self.obs_scales.dof_vel
 
         # critic obs
-        self.privileged_obs_buf = torch.cat((  self.base_lin_vel * self.obs_scales.lin_vel,
-                                            self.base_ang_vel  * self.obs_scales.ang_vel,
-                                            self.projected_gravity,
-                                            self.commands[:, :3] * self.commands_scale,
-                                            (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-                                            self.dof_vel * self.obs_scales.dof_vel,
-                                            self.actions
-                                           ),dim=-1) #48
+        self.privileged_obs_buf = torch.cat(( self.base_lin_vel * self.obs_scales.lin_vel,
+                                              self.base_ang_vel  * self.obs_scales.ang_vel,
+                                              self.projected_gravity,
+                                              self.commands[:, :3] * self.commands_scale,
+                                              (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+                                              self.dof_vel * self.obs_scales.dof_vel,
+                                              self.actions,
+                                              self.env_frictions
+                                              ),dim=-1) #48
             
-        # print('privileged_obs_buf shape:',np.shape(self.privileged_obs_buf))
-        # 92
 
-    
-        # obs_buf = torch.cat((
-        #     self.command_input,  #sin/cos + vel 
-        #     q,  
-        #     dq,  
-        #     self.actions,  
-        #     self.base_ang_vel * self.obs_scales.ang_vel,  
-        #     self.base_euler_xyz * self.obs_scales.quat, 
-        # ), dim=-1)
-        obs_buf = torch.cat((  self.base_lin_vel * self.obs_scales.lin_vel,
-                                    self.base_ang_vel  * self.obs_scales.ang_vel,
-                                    self.projected_gravity,
-                                    self.commands[:, :3] * self.commands_scale,
-                                    (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-                                    self.dof_vel * self.obs_scales.dof_vel,
-                                    self.actions
-                                    ),dim=-1) #48
+        obs_buf = torch.cat((   self.base_lin_vel * self.obs_scales.lin_vel,
+                                self.base_ang_vel  * self.obs_scales.ang_vel,
+                                self.projected_gravity,
+                                self.commands[:, :3] * self.commands_scale,
+                                (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+                                self.dof_vel * self.obs_scales.dof_vel,
+                                self.actions
+                                ),dim=-1) #48
         
 
         
@@ -305,7 +296,7 @@ class GO1FreeEnv(LeggedRobot):
                 f.write(f"{(sum(self.error_linear_x))/len}  {(sum(self.error_linear_y))/len}  {(sum(self.error_angular_yaw))/len} \n")
         #####
 
-        #self.plt_error()
+        
 
 
 

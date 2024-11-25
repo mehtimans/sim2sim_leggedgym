@@ -108,7 +108,7 @@ class LeggedRobotCfg(BaseConfig):
         default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         replace_cylinder_with_capsule = True # replace collision cylinders with capsules, leads to faster/more stable simulation
-        flip_visual_attachments = True # Some .obj meshes must be flipped from y-up to z-up
+        flip_visual_attachments = False # Some .obj meshes must be flipped from y-up to z-up
         
         density = 0.001
         angular_damping = 0.
@@ -120,21 +120,21 @@ class LeggedRobotCfg(BaseConfig):
 
     class domain_rand:
         randomize_friction = True
-        friction_range = [0.4, 1.5] # [0.5 1.25]
+        friction_range = [0.35 ,1.4]
         randomize_base_mass = True
-        added_mass_range = [-0.8, 1.2] # [-1 1]
+        added_mass_range = [-1.2 ,1.2]
         push_robots = True
-        push_interval_s = 18 # 15
-        max_push_vel_xy = 1.4 # 1
+        push_interval_s = 15
+        max_push_vel_xy = 1
         action_delay = 0.5
-        action_noise = 0.028 # 0.02
-        dynamic_randomization = 0.056 # 0.04
+        action_noise = 0.024
+        dynamic_randomization = 0.04
 
     class rewards:
         class scales:
             termination = -0.0
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
+            tracking_lin_vel = 1.2
+            tracking_ang_vel = 0.7
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
             orientation = -0.
@@ -167,15 +167,15 @@ class LeggedRobotCfg(BaseConfig):
         clip_actions = 100.
 
     class noise:
-        add_noise = True
-        noise_level = 1.4 # scales other values
+        add_noise = True # TODO False
+        noise_level = 1.2 # scales other values
         class noise_scales:
             dof_pos = 0.014 #0.01
             dof_vel = 2.1   #1.5
             lin_vel = 0.14  #0.14
-            ang_vel = 0.28  #0.28
+            ang_vel = 0.28  #0.2
             gravity = 0.05
-            height_measurements = 0.14
+            height_measurements = 0.1
 
     # viewer camera:
     class viewer:
