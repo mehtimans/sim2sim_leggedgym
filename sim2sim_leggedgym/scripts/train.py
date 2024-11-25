@@ -41,7 +41,15 @@ import torch
 
 def train(args):
     env, env_cfg, env_cfg_dict = task_registry.make_env(name=args.task, args=args)
-    ppo_runner, train_cfg, train_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args)    
+    ppo_runner, train_cfg, train_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args)   
+    
+    ####
+    # saving log_dir in a text file in scripts directory
+    file_name = "LOG_DIR.txt"
+    with open(file_name, "w") as file:
+        file.write(log_dir)
+    ####
+    
     ppo_runner.learn(num_learning_iterations=train_cfg.runner.max_iterations, init_at_random_ep_len=True)
     
     ########### saving configuration setup
@@ -53,7 +61,56 @@ def train(args):
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as file:
         yaml.dump(config_dict, file)
 
+def plt_error():
+    plt_iterations = []
+    plt_linear_x_errors = []
+    plt_linear_y_errors = []
+    plt_angular_yaw_errors = []
+    
+    with open("LOG_DIR.txt", "r") as f:
+            log_dir = f.read()
+
+    with open(os.path.join(log_dir,'error.txt'), 'r') as f:
+        
+        for index, line in enumerate(f):
+            plt_linear_x_error, plt_linear_y_error, plt_angular_yaw_error = (line.strip().split())
+            plt_linear_x_error = float(plt_linear_x_error)
+            plt_linear_y_error = float(plt_linear_y_error)
+            plt_angular_yaw_error = float(plt_angular_yaw_error)
+            plt_iterations.append(index + 1)
+            plt_linear_x_errors.append(plt_linear_x_error)
+            plt_linear_y_errors.append(plt_linear_y_error)
+            plt_angular_yaw_errors.append(plt_angular_yaw_error)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(plt_iterations, plt_linear_x_errors, marker='', linestyle='-', color='b')
+    plt.title('linear x error')
+    plt.xlabel('Iteration')
+    plt.ylabel('Error')
+    plt.grid(True)
+    plt.savefig(os.path.join(log_dir,'linear_x_error.png'))
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(plt_iterations, plt_linear_y_errors, marker='', linestyle='-', color='b')
+    plt.title('linear y error')
+    plt.xlabel('Iteration')
+    plt.ylabel('Error')
+    plt.grid(True)
+    plt.savefig(os.path.join(log_dir,'linear_y_error.png'))
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(plt_iterations, plt_angular_yaw_errors, marker='', linestyle='-', color='b')
+    plt.title('angular yaw error')
+    plt.xlabel('Iteration')
+    plt.ylabel('Error')
+    plt.grid(True)
+    plt.savefig(os.path.join(log_dir,'angular_yaw_error.png'))
+    plt.close()
+
 
 if __name__ == '__main__':
     args = get_args()
     train(args)
+    plt_error()

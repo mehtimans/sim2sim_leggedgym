@@ -34,13 +34,16 @@ from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi
 
 import torch
+import matplotlib.pyplot as plt
+
 
 from sim2sim_leggedgym.envs.base.legged_robot import LeggedRobot
 
+import os
 from sim2sim_leggedgym.utils.terrain import Terrain
 import numpy as np
 import time
-# from collections import deque
+from collections import deque
 
 
 class GO1FreeEnv(LeggedRobot):
@@ -53,6 +56,10 @@ class GO1FreeEnv(LeggedRobot):
         self.last_feet_z = 0.05
         self.feet_height = torch.zeros((self.num_envs, 2), device=self.device)
         self.reset_idx(torch.tensor(range(self.num_envs), device=self.device))
+        self.error_linear_x = deque(maxlen=100)
+        self.error_linear_y = deque(maxlen=100)
+        self.error_angular_yaw = deque(maxlen=100)
+        self.actions_commands_all = deque(maxlen=100)
         # sensors = self._create_envs()
         self.compute_observations()
 
@@ -155,7 +162,7 @@ class GO1FreeEnv(LeggedRobot):
             self.sim_device_id, self.graphics_device_id, self.physics_engine, self.sim_params)
         mesh_type = self.cfg.terrain.mesh_type
         if mesh_type in ['heightfield', 'trimesh']:
-            self.terrain = IUSTTerrain(self.cfg.terrain, self.num_envs)
+            self.terrain = IUSTTerrain(self.cfg.terrain, self.num_envs) # TODO
         if mesh_type == 'plane':
             self._create_ground_plane()
         elif mesh_type == 'heightfield':
@@ -191,7 +198,6 @@ class GO1FreeEnv(LeggedRobot):
         noise_vec[36:48] = 0. # previous actions
         if self.cfg.terrain.measure_heights:
             noise_vec[50:235] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
-        
         
         return noise_vec
 
@@ -257,15 +263,16 @@ class GO1FreeEnv(LeggedRobot):
                                     self.actions
                                     ),dim=-1) #48
         
-        # print('###########################################obs_buf shape:',np.shape(obs_buf))
-        # print('------------------------------')
+
         
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
             self.privileged_obs_buf = torch.cat((self.privileged_obs_buf, heights), dim=-1)
-        # print("################################################",np.shape(self.noise_scale_vec))
+
         if self.add_noise:  
+            # self.noise_scale_vec = self.noise_scale_vec.to('cuda:0')  # Move to GPU if not already
             obs_buf = obs_buf + torch.randn_like(obs_buf) * self.noise_scale_vec * self.cfg.noise.noise_level
+            
 
         self.obs_history.append(obs_buf.clone())
         # print('obs history:',np.shape(self.obs_history))
@@ -276,6 +283,77 @@ class GO1FreeEnv(LeggedRobot):
                                    for i in range(self.obs_history.maxlen)], dim=1)  
         self.obs_buf = obs_buf_all.reshape(self.num_envs, -1)  
         self.privileged_obs_buf = torch.cat([self.critic_history[i] for i in range(self.cfg.env.c_frame_stack)], dim=1)
+
+        ##### log errors for tracking
+        linear_vel_x_error = abs(self.commands[:,0]) - abs(self.base_lin_vel[:, 0])
+        linear_vel_y_error = abs(self.commands[:,1]) - abs(self.base_lin_vel[:, 1])
+        angular_vel_yaw_error = abs(self.commands[:,2]) - abs(self.base_ang_vel[:, 2])
+
+        self.error_linear_x.append((abs(linear_vel_x_error).sum())/self.num_envs)
+        self.error_linear_y.append((abs(linear_vel_y_error).sum())/self.num_envs)
+        self.error_angular_yaw.append((abs(angular_vel_yaw_error).sum())/self.num_envs)
+        # self.actions_commands_all.append(self.actions_commands_vx[-1] + self.actions_commands_vy[-1] + 10 * self.actions_commands_yaw[-1])
+        len = self.error_linear_x.__len__()
+        
+        # print("#########################################", (sum(self.error_linear_x)/len))
+
+        with open("LOG_DIR.txt", "r") as file:
+            self.log_dir = file.read()
+        
+        if self.log_dir:
+            with open(os.path.join(self.log_dir, "error.txt"), "a") as f:
+                f.write(f"{(sum(self.error_linear_x))/len}  {(sum(self.error_linear_y))/len}  {(sum(self.error_angular_yaw))/len} \n")
+        #####
+
+        #self.plt_error()
+
+
+
+    def plt_error(self):
+        plt_iterations = []
+        plt_linear_x_errors = []
+        plt_linear_y_errors = []
+        plt_angular_yaw_errors = []
+        
+        with open(os.path.join(self.log_dir,'error.txt'), 'r') as f:
+            
+            for index, line in enumerate(f):
+                plt_linear_x_error, plt_linear_y_error, plt_angular_yaw_error = (line.strip().split())
+                plt_linear_x_error = float(plt_linear_x_error)
+                plt_linear_y_error = float(plt_linear_y_error)
+                plt_angular_yaw_error = float(plt_angular_yaw_error)
+                plt_iterations.append(index + 1)
+                plt_linear_x_errors.append(plt_linear_x_error)
+                plt_linear_y_errors.append(plt_linear_y_error)
+                plt_angular_yaw_errors.append(plt_angular_yaw_error)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(plt_iterations, plt_linear_x_errors, marker='.', linestyle='-', color='b')
+        plt.title('linear x error')
+        plt.xlabel('Iteration')
+        plt.ylabel('Error')
+        plt.grid(True)
+        plt.savefig(os.path.join(self.log_dir,'linear_x_error.png'))
+        plt.close()
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(plt_iterations, plt_linear_y_errors, marker='.', linestyle='-', color='b')
+        plt.title('linear y error')
+        plt.xlabel('Iteration')
+        plt.ylabel('Error')
+        plt.grid(True)
+        plt.savefig(os.path.join(self.log_dir,'linear_y_error.png'))
+        plt.close()
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(plt_iterations, plt_angular_yaw_errors, marker='.', linestyle='-', color='b')
+        plt.title('angular yaw error')
+        plt.xlabel('Iteration')
+        plt.ylabel('Error')
+        plt.grid(True)
+        plt.savefig(os.path.join(self.log_dir,'angular_yaw_error.png'))
+        plt.close()
+
     
     def reset_idx(self, env_ids):
         super().reset_idx(env_ids)
