@@ -60,10 +60,10 @@ def play(args):
     # policy = torch.jit.load("/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/23_sim2sim_first.pt")
     
     # export policy as a jit module (used to run it from C++)
-    # if EXPORT_POLICY:
-    #     path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
-    #     export_policy_as_jit(ppo_runner.alg.actor_critic, path)
-    #     print('Exported policy as jit script to: ', path)
+    if EXPORT_POLICY:
+        path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
+        export_policy_as_jit(ppo_runner.alg.actor_critic, path)
+        print('Exported policy as jit script to: ', path)
 
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging
@@ -122,7 +122,7 @@ def play(args):
             logger.print_rewards()
 
 if __name__ == '__main__':
-    EXPORT_POLICY = False
+    EXPORT_POLICY = True
     RECORD_FRAMES = False
     MOVE_CAMERA = False
     args = get_args()

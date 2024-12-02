@@ -44,7 +44,7 @@ def train(args):
     ppo_runner, train_cfg, train_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args)   
     
     ####
-    # saving log_dir in a text file in scripts directory
+    # # saving log_dir in a text file in scripts directory
     file_name = "LOG_DIR.txt"
     with open(file_name, "w") as file:
         file.write(log_dir)

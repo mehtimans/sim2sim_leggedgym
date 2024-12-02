@@ -60,6 +60,7 @@ class GO1FreeEnv(LeggedRobot):
         self.error_linear_y = deque(maxlen=100)
         self.error_angular_yaw = deque(maxlen=100)
         self.actions_commands_all = deque(maxlen=100)
+        self.log_dir = None 
         # sensors = self._create_envs()
         self.compute_observations()
 
@@ -287,63 +288,15 @@ class GO1FreeEnv(LeggedRobot):
         len = self.error_linear_x.__len__()
         
         # print("#########################################", (sum(self.error_linear_x)/len))
+        if os.path.exists("LOG_DIR.txt"):
+            with open("LOG_DIR.txt", "r") as file:
+                self.log_dir = file.read().strip()
 
-        with open("LOG_DIR.txt", "r") as file:
-            self.log_dir = file.read()
         
         if self.log_dir:
             with open(os.path.join(self.log_dir, "error.txt"), "a") as f:
                 f.write(f"{(sum(self.error_linear_x))/len}  {(sum(self.error_linear_y))/len}  {(sum(self.error_angular_yaw))/len} \n")
         #####
-
-        
-
-
-
-    def plt_error(self):
-        plt_iterations = []
-        plt_linear_x_errors = []
-        plt_linear_y_errors = []
-        plt_angular_yaw_errors = []
-        
-        with open(os.path.join(self.log_dir,'error.txt'), 'r') as f:
-            
-            for index, line in enumerate(f):
-                plt_linear_x_error, plt_linear_y_error, plt_angular_yaw_error = (line.strip().split())
-                plt_linear_x_error = float(plt_linear_x_error)
-                plt_linear_y_error = float(plt_linear_y_error)
-                plt_angular_yaw_error = float(plt_angular_yaw_error)
-                plt_iterations.append(index + 1)
-                plt_linear_x_errors.append(plt_linear_x_error)
-                plt_linear_y_errors.append(plt_linear_y_error)
-                plt_angular_yaw_errors.append(plt_angular_yaw_error)
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(plt_iterations, plt_linear_x_errors, marker='.', linestyle='-', color='b')
-        plt.title('linear x error')
-        plt.xlabel('Iteration')
-        plt.ylabel('Error')
-        plt.grid(True)
-        plt.savefig(os.path.join(self.log_dir,'linear_x_error.png'))
-        plt.close()
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(plt_iterations, plt_linear_y_errors, marker='.', linestyle='-', color='b')
-        plt.title('linear y error')
-        plt.xlabel('Iteration')
-        plt.ylabel('Error')
-        plt.grid(True)
-        plt.savefig(os.path.join(self.log_dir,'linear_y_error.png'))
-        plt.close()
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(plt_iterations, plt_angular_yaw_errors, marker='.', linestyle='-', color='b')
-        plt.title('angular yaw error')
-        plt.xlabel('Iteration')
-        plt.ylabel('Error')
-        plt.grid(True)
-        plt.savefig(os.path.join(self.log_dir,'angular_yaw_error.png'))
-        plt.close()
 
     
     def reset_idx(self, env_ids):

@@ -35,7 +35,7 @@ from tqdm import tqdm
 from collections import deque
 from scipy.spatial.transform import Rotation as R
 from sim2sim_leggedgym import LEGGED_GYM_ROOT_DIR
-from sim2sim_leggedgym.envs import IUSTsim2simCfg
+from sim2sim_leggedgym.envs import GO1sim2simCfg
 from sim2sim_leggedgym.algo.ppo.actor_critic import ActorCritic
 from sim2sim_leggedgym.algo.ppo import PPO
 from sim2sim_leggedgym.algo import OnPolicyRunner
@@ -47,8 +47,8 @@ import os
 
 class cmd:
     vx = 0.6
-    vy = 0.3
-    dyaw = 0.0
+    vy = 0.0
+    dyaw = 0.1
 
 def quat_rotate_inverse(quat, vec):
     shape = quat.shape
@@ -81,8 +81,13 @@ def get_obs(data):
     projected_gravity = quat_rotate_inverse(torch.from_numpy(quat_standard), torch.from_numpy(gravity_vec))
     # print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ from sensors", projected_gravity)
 
-    base_lin_vel = data.qvel[:3].astype(np.double)
-    base_ang_vel = data.qvel[3:6].astype(np.double)
+    base_lin_vel_gl = data.qvel[:3].reshape(1, 3).astype(np.double)
+    # print('#################################### base_lin_vel_gl', np.shape(gravity_vec))
+    base_ang_vel_gl = data.qvel[3:6].reshape(1, 3).astype(np.double)
+
+    base_lin_vel = quat_rotate_inverse(torch.from_numpy(quat_standard), torch.from_numpy(base_lin_vel_gl))
+    base_ang_vel = quat_rotate_inverse(torch.from_numpy(quat_standard), torch.from_numpy(base_ang_vel_gl))
+
     return (q, dq, quat_standard, base_lin_vel, base_ang_vel, projected_gravity)
 
 
@@ -129,12 +134,17 @@ def run_mujoco(policy, cfg):
     model.opt.timestep = cfg.sim_config.dt
     data = mujoco.MjData(model)
     # print("##################################################",help(data))
-    mujoco.mj_step(model, data)
-    viewer = mujoco_viewer.MujocoViewer(model, data)
 
     data.qpos[7:19] = qdes
     data.qpos[0:3] = pdes  
     data.qpos[3:7] = rotdes[[3, 0, 1, 2]] # w x y z 
+
+    mujoco.mj_step(model, data)
+    viewer = mujoco_viewer.MujocoViewer(model, data)
+
+    # data.qpos[7:19] = qdes
+    # data.qpos[0:3] = pdes  
+    # data.qpos[3:7] = rotdes[[3, 0, 1, 2]] # w x y z 
 
     target_q = np.zeros((cfg.env.num_actions), dtype=np.double)
     action = np.zeros((cfg.env.num_actions), dtype=np.double)
@@ -172,8 +182,8 @@ def run_mujoco(policy, cfg):
         dq_isaac [6: 9] = dq [9: 12]
         dq_isaac [9: 12] = dq [6: 9]
 
-        with open('desired_command.txt', 'a') as f:
-                f.write(f"{base_lin_vel[0]}  {base_lin_vel[1]} {base_ang_vel[2]} {cmd.vx}  {cmd.vy}  {cmd.dyaw}\n")
+        # with open('desired_command.txt', 'a') as f:
+        #         f.write(f"{base_lin_vel[0]}  {base_lin_vel[1]} {base_ang_vel[2]} {cmd.vx}  {cmd.vy}  {cmd.dyaw}\n")
         
 
         
@@ -237,7 +247,7 @@ if __name__ == '__main__':
     # parser.add_argument('--terrain', action='store_true', help='terrain or plane')
     args = parser.parse_args()
 
-    class Sim2simCfg(IUSTsim2simCfg):
+    class Sim2simCfg(GO1sim2simCfg):
 
         class sim_config:
            
@@ -255,7 +265,7 @@ if __name__ == '__main__':
             tau_limit = 200. * np.ones(12, dtype=np.double)
     
     type_load = 'load_jit'
-    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/23_sim2sim_first.pt"
+    path = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Dec02_16-32-23_/policy_1.pt"#"/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/23_sim2sim_first.pt"
 
     @torch.jit.export
     def reset_memory(self):
@@ -293,3 +303,5 @@ if __name__ == '__main__':
     print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%", os.path.join('home/mehtimans/sim2sim_leggedgym/logs/sim2sim_plt/desired_command.txt'))
     print('policy loaded!...')
     run_mujoco(policy, Sim2simCfg())
+    
+    

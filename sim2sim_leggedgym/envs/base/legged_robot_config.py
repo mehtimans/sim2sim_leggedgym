@@ -242,6 +242,6 @@ class LeggedRobotCfgPPO(BaseConfig):
         run_name = ''
         # load and resume
         resume = False
-        load_run = -1 #"/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/" #-1 # -1 = last run
-        checkpoint = -1 #"3000" # -1 = last saved model checkpoint = "/home/mehtimans//sim2sim_leggedgym/logs/rough_iust/Nov04_18-38-25_/model_1500.pt"
+        load_run = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Dec02_16-32-23_/" #-1 # -1 = last run
+        checkpoint = 2000 #"3000" # -1 = last saved model checkpoint = "/home/mehtimans//sim2sim_leggedgym/logs/rough_iust/Nov04_18-38-25_/model_1500.pt"
         resume_path = None # updated from load_run and chkpt
