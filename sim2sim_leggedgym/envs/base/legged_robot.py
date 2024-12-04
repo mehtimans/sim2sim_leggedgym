@@ -322,6 +322,8 @@ class LeggedRobot(BaseTask):
 
             for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
+               
+            # print("#################################### lens props", s)
             
             #### modified 
             self.env_frictions[env_id] = self.friction_coeffs[env_id]
@@ -358,16 +360,15 @@ class LeggedRobot(BaseTask):
         return props
 
     def _process_rigid_body_props(self, props, env_id):
-        # if env_id==0:
-        #     sum = 0
-        #     for i, p in enumerate(props):
-        #         sum += p.mass
-        #         print(f"Mass of body {i}: {p.mass} (before randomization)")
-        #     print(f"Total mass {sum} (before randomization)")
-        # randomize base mass
+    
+        # TODO This section was modified because some indices changed when collapse_fixed_joints was set to False      
         if self.cfg.domain_rand.randomize_base_mass:
             rng = self.cfg.domain_rand.added_mass_range
-            props[0].mass += np.random.uniform(rng[0], rng[1])
+            self.payloads[env_id, 0] = np.random.uniform(rng[0], rng[1])
+            props[1].mass += self.payloads[env_id, 0] # TODO the default index was zero: props[0]
+    
+        # print("######################################### payloads", self.payloads)     
+        # print("######################################### mass", props[1].mass)        
         return props
     
     def _post_physics_step_callback(self):
@@ -632,6 +633,15 @@ class LeggedRobot(BaseTask):
 
 
         # time.sleep(20000)
+    
+    def _init_privilaged(self):
+
+        ## TODO: using for privileged observation
+        self.rand_push_vel = torch.zeros((self.num_envs, 2), dtype=torch.float32, device=self.device)
+        self.env_frictions = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
+        self.payloads = torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
+        self.body_mass = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
+        ##
 
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
@@ -744,8 +754,12 @@ class LeggedRobot(BaseTask):
 
 
         # save body names from the asset
-        body_names = self.gym.get_asset_rigid_body_names(robot_asset) 
-        # body names: ['base', 'FL_hip', 'FL_thigh', 'FL_calf', 'FL_foot', 'FR_hip', 'FR_thigh', 'FR_calf', 'FR_foot', 'RL_hip', 'RL_thigh', 'RL_calf', 'RL_foot', 'RR_hip', 'RR_thigh', 'RR_calf', 'RR_foot']
+        body_names = self.gym.get_asset_rigid_body_names(robot_asset) # body names len = 23
+
+        # body names: ['base', 'trunk', 'FL_hip', 'FL_thigh_shoulder', 'FL_thigh', 'FL_calf', 'FL_foot', 'FR_hip', 
+        # 'FR_thigh_shoulder', 'FR_thigh', 'FR_calf', 'FR_foot', 'RL_hip', 'RL_thigh_shoulder', 
+        # 'RL_thigh', 'RL_calf', 'RL_foot', 'RR_hip', 'RR_thigh_shoulder', 'RR_thigh', 'RR_calf', 'RR_foot', 'imu_link']
+
         # print("#########################body names", body_names)
         self.dof_names = self.gym.get_asset_dof_names(robot_asset) 
         # print("############################################################################", self.dof_names)
@@ -764,6 +778,7 @@ class LeggedRobot(BaseTask):
 
         #############
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
+        
         base_link_name = "base"  # Adjust according to the URDF link name
         trunk_link_name = "trunk"  # Adjust according to the URDF link name
         # Get indices of specific links based on the URDF definitions
@@ -785,8 +800,10 @@ class LeggedRobot(BaseTask):
         env_upper = gymapi.Vec3(0., 0., 0.)
         self.actor_handles = []
         self.envs = []
-        self.env_frictions = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device)
-        self.body_mass = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
+        
+        # TODO: initialization for new privileged i added
+        self._init_privilaged()
+        
         self.sensors = [] # added
 
         # body_idx = self.gym.find_asset_rigid_body_index(robot_asset, 'FL_calf') # rigid body force sensors # added
@@ -805,12 +822,16 @@ class LeggedRobot(BaseTask):
             start_pose.p = gymapi.Vec3(*pos)
             
             rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
+            # print("#########################rigid_shape_props", len(rigid_shape_props))
             self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
             dof_props = self._process_dof_props(dof_props_asset, i)
+            # print("#########################dof_props", len(dof_props))
             self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
-            body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
+            body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle) # body_props_len = 23
+            # print("##################################### body_props", len(body_props))
             body_props = self._process_rigid_body_props(body_props, i)
+            # print("#########################body_props", len(body_props))
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
             # num_sensors = self.gym.get_actor_force_sensor_count(env_handle, actor_handle)
             self.envs.append(env_handle)
@@ -1065,3 +1086,14 @@ class LeggedRobot(BaseTask):
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+
+
+
+
+
+
+
+
+
+
+

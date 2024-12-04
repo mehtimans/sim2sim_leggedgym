@@ -67,22 +67,10 @@ class GO1FreeEnv(LeggedRobot):
     def _push_robots(self):
         """ Random pushes the quadruped robots. Emulates an impulse by setting a randomized base velocity. 
         """
-        # max_vel = self.cfg.domain_rand.max_push_vel_xy
-        # max_push_angular = self.cfg.domain_rand.max_push_ang_vel
-
-        # self.rand_push_force[:, :2] = torch_rand_float(
-        #     -max_vel, max_vel, (self.num_envs, 2), device=self.device)  # lin vel x/y
-        # self.root_states[:, 7:9] = self.rand_push_force[:, :2]
-
-        # self.rand_push_torque = torch_rand_float(
-        #     -max_push_angular, max_push_angular, (self.num_envs, 3), device=self.device)
-        # self.root_states[:, 10:13] = self.rand_push_torque
-
-        # self.gym.set_actor_root_state_tensor(
-        #     self.sim, gymtorch.unwrap_tensor(self.root_states))
-        
         max_vel = self.cfg.domain_rand.max_push_vel_xy
-        self.root_states[:, 7:9] = torch_rand_float(-max_vel, max_vel, (self.num_envs, 2), device=self.device) # lin vel x/y
+        # TODO using rand push vel as privileged obs
+        self.rand_push_vel = torch_rand_float(-max_vel, max_vel, (self.num_envs, 2), device=self.device) # lin vel x/y
+        self.root_states[:, 7:9] = self.rand_push_vel
         self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))
         
     def _get_phase(self):
@@ -236,16 +224,19 @@ class GO1FreeEnv(LeggedRobot):
 
         # critic obs
         self.privileged_obs_buf = torch.cat(( self.base_lin_vel * self.obs_scales.lin_vel,
-                                              self.base_ang_vel  * self.obs_scales.ang_vel,
+                                              self.base_ang_vel * self.obs_scales.ang_vel,
                                               self.projected_gravity,
                                               self.commands[:, :3] * self.commands_scale,
                                               (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
                                               self.dof_vel * self.obs_scales.dof_vel,
                                               self.actions,
-                                              self.env_frictions
-                                              ),dim=-1) #48
+                                              self.env_frictions, # 1
+                                              self.payloads, # 1
+                                              self.rand_push_vel # 2
+                                              ),dim=-1) # 52
             
-
+        # print("########################################## rand push", self.rand_push_vel)    
+        # print("privileged obs ", np.shape(self.privileged_obs_buf))
         obs_buf = torch.cat((   self.base_lin_vel * self.obs_scales.lin_vel,
                                 self.base_ang_vel  * self.obs_scales.ang_vel,
                                 self.projected_gravity,
@@ -253,7 +244,7 @@ class GO1FreeEnv(LeggedRobot):
                                 (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
                                 self.dof_vel * self.obs_scales.dof_vel,
                                 self.actions
-                                ),dim=-1) #48
+                                ),dim=-1) # 48
         
 
         
@@ -287,7 +278,6 @@ class GO1FreeEnv(LeggedRobot):
         # self.actions_commands_all.append(self.actions_commands_vx[-1] + self.actions_commands_vy[-1] + 10 * self.actions_commands_yaw[-1])
         len = self.error_linear_x.__len__()
         
-        # print("#########################################", (sum(self.error_linear_x)/len))
         if os.path.exists("LOG_DIR.txt"):
             with open("LOG_DIR.txt", "r") as file:
                 self.log_dir = file.read().strip()
