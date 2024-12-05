@@ -41,7 +41,7 @@ class LeggedRobotCfg(BaseConfig):
         episode_length_s = 20 # episode length in seconds
 
     class terrain:
-        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
+        mesh_type = 'uneven' # "heightfield" # none, plane, heightfield or trimesh or uneven
         horizontal_scale = 0.1 # [m]
         vertical_scale = 0.005 # [m]
         border_size = 25 # [m]
@@ -119,10 +119,13 @@ class LeggedRobotCfg(BaseConfig):
         thickness = 0.01
 
     class domain_rand:
+        num_buckets = 64
         randomize_friction = True
         friction_range = [0.35 ,1.4]
         randomize_base_mass = True
         added_mass_range = [-1.2 ,1.2]
+        randomize_restitution = False
+        restitution_range = [0, 1.0]
         push_robots = True
         push_interval_s = 15
         max_push_vel_xy = 1
@@ -242,6 +245,6 @@ class LeggedRobotCfgPPO(BaseConfig):
         run_name = ''
         # load and resume
         resume = False
-        load_run = "/home/mehtimans/sim2sim_leggedgym/logs/go1/Dec02_16-32-23_/" #-1 # -1 = last run
-        checkpoint = 2000 #"3000" # -1 = last saved model checkpoint = "/home/mehtimans//sim2sim_leggedgym/logs/rough_iust/Nov04_18-38-25_/model_1500.pt"
+        load_run = -1 # "/home/mehtimans/sim2sim_leggedgym/logs/go1/Dec02_16-32-23_/"  # -1 = last run
+        checkpoint = -1 #"3000" # -1 = last saved model checkpoint = "/home/mehtimans//sim2sim_leggedgym/logs/rough_iust/Nov04_18-38-25_/model_1500.pt"
         resume_path = None # updated from load_run and chkpt

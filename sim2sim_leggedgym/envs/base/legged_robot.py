@@ -36,6 +36,7 @@ import os
 
 from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi, gymutil
+from isaacgym.terrain_utils import *
 
 import torch
 from torch import Tensor
@@ -313,20 +314,26 @@ class LeggedRobot(BaseTask):
         """
         if self.cfg.domain_rand.randomize_friction:
             if env_id==0:
+                num_buckets = self.cfg.domain_rand.num_buckets
+                bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
+
                 # prepare friction randomization
                 friction_range = self.cfg.domain_rand.friction_range
-                num_buckets = 64
-                bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
                 friction_buckets = torch_rand_float(friction_range[0], friction_range[1], (num_buckets,1), device='cpu')
                 self.friction_coeffs = friction_buckets[bucket_ids]
 
+                # prepare restitution randomization
+                restitution_range = self.cfg.domain_rand.restitution_range
+                restitution_buckets = torch_rand_float(restitution_range[0], restitution_range[1], (num_buckets,1), device='cpu')
+                self.restitution_coeffs = restitution_buckets[bucket_ids]
+
             for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
-               
-            # print("#################################### lens props", s)
+                props[s].restitution = self.restitution_coeffs[env_id]
             
             #### modified 
             self.env_frictions[env_id] = self.friction_coeffs[env_id]
+            self.env_restitution[env_id] = self.restitution_coeffs[env_id]
             ####
             
         return props
@@ -639,6 +646,7 @@ class LeggedRobot(BaseTask):
         ## TODO: using for privileged observation
         self.rand_push_vel = torch.zeros((self.num_envs, 2), dtype=torch.float32, device=self.device)
         self.env_frictions = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
+        self.env_restitution = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
         self.payloads = torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
         self.body_mass = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
         ##

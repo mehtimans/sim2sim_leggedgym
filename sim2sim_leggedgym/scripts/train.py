@@ -60,6 +60,7 @@ def train(args):
     
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as file:
         yaml.dump(config_dict, file)
+    
 
 def plt_error():
     plt_iterations = []
@@ -110,7 +111,15 @@ def plt_error():
     plt.close()
 
 
+
+
 if __name__ == '__main__':
     args = get_args()
     train(args)
     plt_error()
+    
+    try:
+      os.remove("LOG_DIR.txt")
+    except:
+      print("LOG_DIR.txt doesn't remove")
+

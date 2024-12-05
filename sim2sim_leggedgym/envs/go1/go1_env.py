@@ -32,6 +32,7 @@ import isaacgym
 
 from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi
+from isaacgym.terrain_utils import *
 
 import torch
 import matplotlib.pyplot as plt
@@ -151,17 +152,49 @@ class GO1FreeEnv(LeggedRobot):
             self.sim_device_id, self.graphics_device_id, self.physics_engine, self.sim_params)
         mesh_type = self.cfg.terrain.mesh_type
         if mesh_type in ['heightfield', 'trimesh']:
-            self.terrain = IUSTTerrain(self.cfg.terrain, self.num_envs) # TODO
+                self.terrain = Terrain(self.cfg.terrain, self.num_envs)
         if mesh_type == 'plane':
             self._create_ground_plane()
         elif mesh_type == 'heightfield':
             self._create_heightfield()
         elif mesh_type == 'trimesh':
             self._create_trimesh()
+        elif mesh_type == 'uneven':
+            self._creat_uneven_ground()
         elif mesh_type is not None:
             raise ValueError(
                 "Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
         self._create_envs()
+
+    def _creat_uneven_ground(self):
+        
+        num_terrains = 1
+        terrain_width = 50.
+        terrain_length = 50.
+        horizontal_scale = 0.1  # [m] resolution in x
+        vertical_scale = 0.005  # [m] resolution in z
+        num_rows = int(terrain_width/horizontal_scale)
+        num_cols = int(terrain_length/horizontal_scale)
+        heightfield = np.zeros((num_terrains*num_rows, num_cols), dtype=np.int16)
+        
+        def new_sub_terrain(): return SubTerrain(width=num_rows, length=num_cols, vertical_scale=vertical_scale, horizontal_scale=horizontal_scale)
+
+        heightfield[0:1*num_rows, :] = random_uniform_terrain(new_sub_terrain(), min_height=-0.2, max_height=0.0, step=0.05, downsampled_scale=0.3).height_field_raw
+
+        vertices, triangles = convert_heightfield_to_trimesh(heightfield, horizontal_scale=horizontal_scale, vertical_scale=vertical_scale, slope_threshold=1.5)
+
+        tm_params = gymapi.TriangleMeshParams()
+
+        tm_params.nb_vertices = vertices.shape[0]
+        tm_params.nb_triangles = triangles.shape[0]
+        tm_params.transform.p.x = -terrain_width/3
+        tm_params.transform.p.y = -terrain_length/3
+        tm_params.static_friction = self.cfg.terrain.static_friction
+        tm_params.dynamic_friction = self.cfg.terrain.dynamic_friction
+        tm_params.restitution = self.cfg.terrain.restitution
+
+        self.gym.add_triangle_mesh(self.sim, vertices.flatten(), triangles.flatten(), tm_params)
+
 
     def _get_noise_scale_vec(self, cfg):
         """ Sets a vector used to scale the noise added to the observations.
@@ -231,11 +264,14 @@ class GO1FreeEnv(LeggedRobot):
                                               self.dof_vel * self.obs_scales.dof_vel,
                                               self.actions,
                                               self.env_frictions, # 1
+                                              self.env_restitution, # 1
                                               self.payloads, # 1
                                               self.rand_push_vel # 2
                                               ),dim=-1) # 52
             
-        # print("########################################## rand push", self.rand_push_vel)    
+        # print("########################################## friction", self.env_frictions)
+        # print("########################################## restitution", self.env_restitution)    
+
         # print("privileged obs ", np.shape(self.privileged_obs_buf))
         obs_buf = torch.cat((   self.base_lin_vel * self.obs_scales.lin_vel,
                                 self.base_ang_vel  * self.obs_scales.ang_vel,
@@ -364,9 +400,15 @@ class GO1FreeEnv(LeggedRobot):
         # Reward long steps
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        # print("self contact", contact)
+        # print('self last contact ', self.last_contacts)
+        # self contact forces  tensor([[ 0.0000,  0.0000,  0.0000, 34.8771]], device='cuda:0')
+        # contact  tensor([[False, False, False,  True]], device='cuda:0')
         contact_filt = torch.logical_or(contact, self.last_contacts) 
+        # print('contact filt', contact_filt)
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.) * contact_filt
+        # print('feet air time', first_contact)
         self.feet_air_time += self.dt
         rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
