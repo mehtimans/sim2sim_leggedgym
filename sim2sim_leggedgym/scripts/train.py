@@ -121,5 +121,5 @@ if __name__ == '__main__':
     try:
       os.remove("LOG_DIR.txt")
     except:
-      print("LOG_DIR.txt doesn't remove")
+      print("LOG_DIR.txt is not removed.")
 

@@ -195,6 +195,15 @@ class GO1FreeEnv(LeggedRobot):
 
         self.gym.add_triangle_mesh(self.sim, vertices.flatten(), triangles.flatten(), tm_params)
 
+    def _init_privilaged(self):
+
+        ## TODO: using for privileged observation
+        self.rand_push_vel = torch.zeros((self.num_envs, 2), dtype=torch.float32, device=self.device)
+        self.env_frictions = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
+        self.env_restitution = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
+        self.payloads = torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
+        self.com_displacements = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
+        ##
 
     def _get_noise_scale_vec(self, cfg):
         """ Sets a vector used to scale the noise added to the observations.
@@ -222,6 +231,68 @@ class GO1FreeEnv(LeggedRobot):
             noise_vec[50:235] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
         
         return noise_vec
+    
+    def _process_rigid_shape_props(self, props, env_id):
+        """ Callback allowing to store/change/randomize the rigid shape properties of each environment.
+            Called During environment creation.
+            Base behavior: randomizes the friction of each environment
+
+        Args:
+            props (List[gymapi.RigidShapeProperties]): Properties of each shape of the asset
+            env_id (int): Environment id
+
+        Returns:
+            [List[gymapi.RigidShapeProperties]]: Modified rigid shape properties
+        """
+        if self.cfg.domain_rand.randomize_friction:
+            if env_id==0:
+                num_buckets_fri = self.cfg.domain_rand.num_buckets_friction
+                bucket_ids = torch.randint(0, num_buckets_fri, (self.num_envs, 1))
+
+                # prepare friction randomization
+                friction_range = self.cfg.domain_rand.friction_range
+                friction_buckets = torch_rand_float(friction_range[0], friction_range[1], (num_buckets_fri,1), device='cpu')
+                self.friction_coeffs = friction_buckets[bucket_ids]
+
+            for s in range(len(props)):
+                props[s].friction = self.friction_coeffs[env_id]
+            
+            self.env_frictions[env_id] = self.friction_coeffs[env_id]
+        
+        if self.cfg.domain_rand.randomize_restitution:
+            if env_id==0:
+                num_buckets_res = self.cfg.domain_rand.num_buckets_restitution
+                bucket_ids = torch.randint(0, num_buckets_res, (self.num_envs, 1))
+
+                # prepare restitution randomization
+                restitution_range = self.cfg.domain_rand.restitution_range
+                restitution_buckets = torch_rand_float(restitution_range[0], restitution_range[1], (num_buckets_res,1), device='cpu')
+                self.restitution_coeffs = restitution_buckets[bucket_ids]
+
+            for s in range(len(props)):
+                props[s].restitution = self.restitution_coeffs[env_id]
+            
+            
+            self.env_restitution[env_id] = self.restitution_coeffs[env_id]
+            
+        return props
+    
+    def _process_rigid_body_props(self, props, env_id):
+    
+        # TODO This section was modified because some indices changed when collapse_fixed_joints was set to False      
+        if self.cfg.domain_rand.randomize_base_mass:
+            mass_range = self.cfg.domain_rand.added_mass_range
+            self.payloads[env_id, 0] = np.random.uniform(mass_range[0], mass_range[1])
+            props[1].mass += self.payloads[env_id, 0] # TODO the default index was zero: props[0]
+        
+        if self.cfg.domain_rand.randomize_com_displacement:
+            com_range = self.cfg.domain_rand.com_displacement_range
+            self.com_displacements[env_id, :] = torch.rand(1, 3, dtype=torch.float, device=self.device,
+                                                            requires_grad=False) * (com_range[1] - com_range[0]) + com_range[0]
+            props[1].com += gymapi.Vec3(self.com_displacements[env_id, 0], self.com_displacements[env_id, 1], 
+                                        self.com_displacements[env_id, 2])
+                                          
+        return props
 
 
     def step(self, actions):
@@ -237,6 +308,20 @@ class GO1FreeEnv(LeggedRobot):
         # print("#####################################")
         return super().step(actions)
     
+    def compute_states(self):
+        
+        self.contact_foot_force = self.contact_forces[:, self.feet_indices, :]
+        self.contact_foot_z_force = self.contact_forces[:, self.feet_indices, 2]
+        self.contact_state = (torch.norm(self.contact_foot_force, dim=-1) > 1.0).int()
+
+
+        self.contact_thigh_force = self.contact_forces[:, self.thigh_contact_indices, :]
+        self.thigh_state = (torch.norm(self.contact_thigh_force, dim=-1) > 1.0).int()
+
+        self.contact_calf_force = self.contact_forces[:, self.calf_contact_indices, :]
+        self.calf_state = (torch.norm(self.contact_calf_force, dim=-1) > 1.0).int()
+
+
 
     def compute_observations(self):
         """ Compute observations for the quadruped robot. """
@@ -254,25 +339,41 @@ class GO1FreeEnv(LeggedRobot):
         
         q = (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos
         dq = self.dof_vel * self.obs_scales.dof_vel
+        
+        # TODO
+        self.compute_states()
 
         # critic obs
-        self.privileged_obs_buf = torch.cat(( self.base_lin_vel * self.obs_scales.lin_vel,
-                                              self.base_ang_vel * self.obs_scales.ang_vel,
-                                              self.projected_gravity,
-                                              self.commands[:, :3] * self.commands_scale,
-                                              (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-                                              self.dof_vel * self.obs_scales.dof_vel,
-                                              self.actions,
+        self.privileged_obs_buf = torch.cat(( self.base_lin_vel * self.obs_scales.lin_vel, # 3
+                                              self.base_ang_vel * self.obs_scales.ang_vel, # 3
+                                              self.projected_gravity, # 3
+                                              self.commands[:, :3] * self.commands_scale, # 3
+                                              (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos, # 12
+                                              self.dof_vel * self.obs_scales.dof_vel, # 12
+                                              self.actions, # 12
                                               self.env_frictions, # 1
                                               self.env_restitution, # 1
                                               self.payloads, # 1
-                                              self.rand_push_vel # 2
-                                              ),dim=-1) # 52
-            
+                                              self.rand_push_vel, # 2
+                                              self.com_displacements, # 3
+                                              self.contact_foot_z_force, #4
+                                              self.contact_state, # 4
+                                              self.thigh_state, # 4
+                                              self.calf_state  # 4          
+                                              ),dim=-1) # 72
+         
         # print("########################################## friction", self.env_frictions)
         # print("########################################## restitution", self.env_restitution)    
 
         # print("privileged obs ", np.shape(self.privileged_obs_buf))
+        
+        # print("################################## push vel ", (self.rand_push_vel))
+        # print("################################## env frictions  ", (self.env_frictions))
+        # print("################################## env restitutions  ", (self.env_restitution))
+        # print("################################## env playloads ", (self.payloads))
+        # print("################################## env com sdisplacements ", (self.com_displacements))
+
+
         obs_buf = torch.cat((   self.base_lin_vel * self.obs_scales.lin_vel,
                                 self.base_ang_vel  * self.obs_scales.ang_vel,
                                 self.projected_gravity,
@@ -282,7 +383,6 @@ class GO1FreeEnv(LeggedRobot):
                                 self.actions
                                 ),dim=-1) # 48
         
-
         
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements

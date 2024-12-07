@@ -37,8 +37,8 @@ class GO1sim2simCfg(LeggedRobotCfg):
         c_frame_stack = 3 #3
         num_single_obs = 48
         num_observations = int(frame_stack * num_single_obs) # 48*15 = 720
-        single_num_privileged_obs = 53 #70 
-        num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) # 3*92 = 276
+        single_num_privileged_obs = 72  
+        num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) 
         num_actions = 12
         num_envs = 500
         env_spacing = 3.  # not used with heightfields/trimeshes 

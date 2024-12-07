@@ -314,28 +314,15 @@ class LeggedRobot(BaseTask):
         """
         if self.cfg.domain_rand.randomize_friction:
             if env_id==0:
-                num_buckets = self.cfg.domain_rand.num_buckets
-                bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
-
                 # prepare friction randomization
                 friction_range = self.cfg.domain_rand.friction_range
+                num_buckets = 64
+                bucket_ids = torch.randint(0, num_buckets, (self.num_envs, 1))
                 friction_buckets = torch_rand_float(friction_range[0], friction_range[1], (num_buckets,1), device='cpu')
                 self.friction_coeffs = friction_buckets[bucket_ids]
 
-                # prepare restitution randomization
-                restitution_range = self.cfg.domain_rand.restitution_range
-                restitution_buckets = torch_rand_float(restitution_range[0], restitution_range[1], (num_buckets,1), device='cpu')
-                self.restitution_coeffs = restitution_buckets[bucket_ids]
-
             for s in range(len(props)):
                 props[s].friction = self.friction_coeffs[env_id]
-                props[s].restitution = self.restitution_coeffs[env_id]
-            
-            #### modified 
-            self.env_frictions[env_id] = self.friction_coeffs[env_id]
-            self.env_restitution[env_id] = self.restitution_coeffs[env_id]
-            ####
-            
         return props
 
     def _process_dof_props(self, props, env_id):
@@ -365,17 +352,18 @@ class LeggedRobot(BaseTask):
                 self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
                 self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
         return props
-
-    def _process_rigid_body_props(self, props, env_id):
     
-        # TODO This section was modified because some indices changed when collapse_fixed_joints was set to False      
+    def _process_rigid_body_props(self, props, env_id):
+        # if env_id==0:
+        #     sum = 0
+        #     for i, p in enumerate(props):
+        #         sum += p.mass
+        #         print(f"Mass of body {i}: {p.mass} (before randomization)")
+        #     print(f"Total mass {sum} (before randomization)")
+        # randomize base mass
         if self.cfg.domain_rand.randomize_base_mass:
             rng = self.cfg.domain_rand.added_mass_range
-            self.payloads[env_id, 0] = np.random.uniform(rng[0], rng[1])
-            props[1].mass += self.payloads[env_id, 0] # TODO the default index was zero: props[0]
-    
-        # print("######################################### payloads", self.payloads)     
-        # print("######################################### mass", props[1].mass)        
+            props[0].mass += np.random.uniform(rng[0], rng[1])
         return props
     
     def _post_physics_step_callback(self):
@@ -641,16 +629,6 @@ class LeggedRobot(BaseTask):
 
         # time.sleep(20000)
     
-    def _init_privilaged(self):
-
-        ## TODO: using for privileged observation
-        self.rand_push_vel = torch.zeros((self.num_envs, 2), dtype=torch.float32, device=self.device)
-        self.env_frictions = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
-        self.env_restitution = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
-        self.payloads = torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
-        self.body_mass = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
-        ##
-
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, whcih will be called to compute the total reward.
             Looks for self._reward_<REWARD_NAME>, where <REWARD_NAME> are names of all non zero reward scales in the cfg.
@@ -783,7 +761,9 @@ class LeggedRobot(BaseTask):
         termination_contact_names = [] # ['base']
         for name in self.cfg.asset.terminate_after_contacts_on:
             termination_contact_names.extend([s for s in body_names if name in s])
-
+        
+        thigh_contact_names = ['FL_thigh', 'FR_thigh', 'RL_thigh', 'RR_thigh']
+        calf_contact_names = ['FL_calf', 'FR_calf', 'RL_calf', 'RR_calf']
         #############
         body_names = self.gym.get_asset_rigid_body_names(robot_asset)
         
@@ -857,8 +837,16 @@ class LeggedRobot(BaseTask):
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
-
-
+        
+        self.thigh_contact_indices = torch.zeros(len(thigh_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i in range(len(thigh_contact_names)):
+            self.thigh_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], thigh_contact_names[i])
+        
+        self.calf_contact_indices = torch.zeros(len(calf_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i in range(len(calf_contact_names)):
+            self.calf_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], calf_contact_names[i])
+        
+        
         # for env, actor_handle in zip(self.envs, self.actor_handles): 
         #     num_sensors = self.gym.get_actor_force_sensor_count(env, actor_handle)
 

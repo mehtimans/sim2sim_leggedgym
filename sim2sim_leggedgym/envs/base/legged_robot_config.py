@@ -41,7 +41,7 @@ class LeggedRobotCfg(BaseConfig):
         episode_length_s = 20 # episode length in seconds
 
     class terrain:
-        mesh_type = 'uneven' # "heightfield" # none, plane, heightfield or trimesh or uneven
+        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh or uneven
         horizontal_scale = 0.1 # [m]
         vertical_scale = 0.005 # [m]
         border_size = 25 # [m]
@@ -119,19 +119,27 @@ class LeggedRobotCfg(BaseConfig):
         thickness = 0.01
 
     class domain_rand:
-        num_buckets = 64
+        num_buckets_friction = 64
         randomize_friction = True
         friction_range = [0.35 ,1.4]
+
         randomize_base_mass = True
         added_mass_range = [-1.2 ,1.2]
-        randomize_restitution = False
+
+        num_buckets_restitution = 64
+        randomize_restitution = True
         restitution_range = [0, 1.0]
+
+        randomize_com_displacement = True
+        com_displacement_range = [-0.05, 0.05]
+
         push_robots = True
         push_interval_s = 15
         max_push_vel_xy = 1
+
         action_delay = 0.5
-        action_noise = 0.024
-        dynamic_randomization = 0.04
+        action_noise = 0.024 # 0.04
+   
 
     class rewards:
         class scales:
@@ -206,7 +214,7 @@ class LeggedRobotCfg(BaseConfig):
             contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
 class LeggedRobotCfgPPO(BaseConfig):
-    seed = 1 # -1 for random
+    seed = -1 # -1 for random
     runner_class_name = 'OnPolicyRunner'
     class policy:
         init_noise_std = 1.0
