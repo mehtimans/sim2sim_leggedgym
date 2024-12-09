@@ -57,10 +57,10 @@ class GO1FreeEnv(LeggedRobot):
         self.last_feet_z = 0.05
         self.feet_height = torch.zeros((self.num_envs, 2), device=self.device)
         self.reset_idx(torch.tensor(range(self.num_envs), device=self.device))
-        self.error_linear_x = deque(maxlen=100)
-        self.error_linear_y = deque(maxlen=100)
-        self.error_angular_yaw = deque(maxlen=100)
-        self.actions_commands_all = deque(maxlen=100)
+        self.error_linear_x = deque(maxlen=10)
+        self.error_linear_y = deque(maxlen=10)
+        self.error_angular_yaw = deque(maxlen=10)
+        self.actions_commands_all = deque(maxlen=10)
         self.log_dir = None 
         # sensors = self._create_envs()
         self.compute_observations()
@@ -205,7 +205,6 @@ class GO1FreeEnv(LeggedRobot):
         self.com_displacements = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
         self.joint_damping =  torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
         self.joint_friction =  torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
-
         ##
 
     def _get_noise_scale_vec(self, cfg):
@@ -354,7 +353,7 @@ class GO1FreeEnv(LeggedRobot):
         # print("#####################################")
         return super().step(actions)
     
-    def compute_states(self):
+    def compute_contact_states(self):
         
         self.contact_foot_force = self.contact_forces[:, self.feet_indices, :]
         self.contact_foot_z_force = self.contact_forces[:, self.feet_indices, 2]
@@ -387,7 +386,7 @@ class GO1FreeEnv(LeggedRobot):
         dq = self.dof_vel * self.obs_scales.dof_vel
         
         # TODO
-        self.compute_states()
+        self.compute_contact_states()
 
         # critic obs
         self.privileged_obs_buf = torch.cat(( self.base_lin_vel * self.obs_scales.lin_vel, # 3
