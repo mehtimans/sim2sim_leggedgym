@@ -110,16 +110,52 @@ def plt_error():
     plt.savefig(os.path.join(log_dir,'angular_yaw_error.png'))
     plt.close()
 
-
-
-
-if __name__ == '__main__':
-    args = get_args()
-    train(args)
-    plt_error()
+def plt_rewards():
+    plt_iterations = []
+    plt_topic = []
+    rewards = []
+    with open("LOG_DIR.txt", "r") as f:
+            log_dir = f.read()
     
+    with open(os.path.join(log_dir,'rewards.text'), 'r') as f:
+        for index, line in enumerate(f):
+            if index == 0:
+                rewards_number = len(line.split(" "))
+                for topic in line.split(" "):
+                     plt_topic.append(topic)
+            else:
+                plt_iterations.append(index)
+                rewards.append([])
+                for value in line.split(" "):
+                    try:
+                        rewards[-1].append(float(value))
+                    except:
+                         pass
+    rewards_by_topic = list(zip(*rewards))
+    for i in range(rewards_number):
+        plt.figure(figsize=(10, 6))
+        plt.plot(plt_iterations, rewards_by_topic[i], marker='', linestyle='-', color='b')
+        plt.title(plt_topic[i].replace("_", " "))
+        plt.xlabel('Iteration')
+        plt.ylabel('reward')
+        plt.grid(True)
+        plt.savefig(os.path.join(log_dir,f'{plt_topic[i]}.png'))
+        plt.close()
+
+def remove_LOG_DIR():
     try:
       os.remove("LOG_DIR.txt")
     except:
       print("LOG_DIR.txt is not removed.")
+
+  
+
+if __name__ == '__main__':
+    
+    remove_LOG_DIR()
+    args = get_args()
+    train(args)
+    plt_error()
+    plt_rewards()
+    remove_LOG_DIR()
 

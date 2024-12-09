@@ -169,17 +169,17 @@ class GO1FreeEnv(LeggedRobot):
     def _creat_uneven_ground(self):
         
         num_terrains = 1
-        terrain_width = 50.
-        terrain_length = 50.
+        terrain_width = 200.
+        terrain_length = 200.
         horizontal_scale = 0.1  # [m] resolution in x
-        vertical_scale = 0.005  # [m] resolution in z
+        vertical_scale = 0.01  # [m] resolution in z
         num_rows = int(terrain_width/horizontal_scale)
         num_cols = int(terrain_length/horizontal_scale)
         heightfield = np.zeros((num_terrains*num_rows, num_cols), dtype=np.int16)
         
         def new_sub_terrain(): return SubTerrain(width=num_rows, length=num_cols, vertical_scale=vertical_scale, horizontal_scale=horizontal_scale)
 
-        heightfield[0:1*num_rows, :] = random_uniform_terrain(new_sub_terrain(), min_height=-0.2, max_height=0.0, step=0.05, downsampled_scale=0.3).height_field_raw
+        heightfield[0:1*num_rows, :] = random_uniform_terrain(new_sub_terrain(), min_height=-0.05, max_height=0.05, step=0.05, downsampled_scale=0.3).height_field_raw
 
         vertices, triangles = convert_heightfield_to_trimesh(heightfield, horizontal_scale=horizontal_scale, vertical_scale=vertical_scale, slope_threshold=1.5)
 
@@ -203,6 +203,9 @@ class GO1FreeEnv(LeggedRobot):
         self.env_restitution = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
         self.payloads = torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
         self.com_displacements = torch.zeros(self.num_envs, 3, dtype=torch.float, device=self.device, requires_grad=False)
+        self.joint_damping =  torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
+        self.joint_friction =  torch.zeros(self.num_envs, 1,dtype=torch.float, device=self.device, requires_grad=False)
+
         ##
 
     def _get_noise_scale_vec(self, cfg):
@@ -231,6 +234,49 @@ class GO1FreeEnv(LeggedRobot):
             noise_vec[50:235] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
         
         return noise_vec
+    
+    def _process_dof_props(self, props, env_id):
+        """ Callback allowing to store/change/randomize the DOF properties of each environment.
+            Called During environment creation.
+            Base behavior: stores position, velocity and torques limits defined in the URDF
+
+        Args:
+            props (numpy.array): Properties of each DOF of the asset
+            env_id (int): Environment id
+
+        Returns:
+            [numpy.array]: Modified DOF properties
+        """
+        if env_id==0:
+            self.dof_pos_limits = torch.zeros(self.num_dof, 2, dtype=torch.float, device=self.device, requires_grad=False)
+            self.dof_vel_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+            self.torque_limits = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+            for i in range(len(props)):
+                self.dof_pos_limits[i, 0] = props["lower"][i].item()
+                self.dof_pos_limits[i, 1] = props["upper"][i].item()
+                self.dof_vel_limits[i] = props["velocity"][i].item()
+                self.torque_limits[i] = props["effort"][i].item()
+                # soft limits
+                m = (self.dof_pos_limits[i, 0] + self.dof_pos_limits[i, 1]) / 2
+                r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
+                self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
+                self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
+
+        if self.cfg.domain_rand.randomize_joint_damping:
+            joint_damping_range = self.cfg.domain_rand.joint_damping_range
+            self.joint_damping[env_id, 0] = np.random.uniform(joint_damping_range[0], joint_damping_range[1])  
+            for i in range(len(props)): # len (props) = 12
+                if self.joint_type[i] == gymapi.JOINT_REVOLUTE:
+                    props['damping'][i] = self.joint_damping[env_id, 0]
+
+        if self.cfg.domain_rand.randomize_joint_friction:
+            joint_friction_range = self.cfg.domain_rand.joint_friction_range
+            self.joint_friction[env_id, 0] = np.random.uniform(joint_friction_range[0], joint_friction_range[1])  
+            for i in range(len(props)):
+                if self.joint_type[i] == gymapi.JOINT_REVOLUTE:
+                    props['friction'][i] = self.joint_friction[env_id, 0]  
+
+        return props
     
     def _process_rigid_shape_props(self, props, env_id):
         """ Callback allowing to store/change/randomize the rigid shape properties of each environment.
@@ -316,10 +362,10 @@ class GO1FreeEnv(LeggedRobot):
 
 
         self.contact_thigh_force = self.contact_forces[:, self.thigh_contact_indices, :]
-        self.thigh_state = (torch.norm(self.contact_thigh_force, dim=-1) > 1.0).int()
+        self.thigh_contact_state = (torch.norm(self.contact_thigh_force, dim=-1) > 1.0).int()
 
         self.contact_calf_force = self.contact_forces[:, self.calf_contact_indices, :]
-        self.calf_state = (torch.norm(self.contact_calf_force, dim=-1) > 1.0).int()
+        self.calf_contact_state = (torch.norm(self.contact_calf_force, dim=-1) > 1.0).int()
 
 
 
@@ -356,14 +402,16 @@ class GO1FreeEnv(LeggedRobot):
                                               self.payloads, # 1
                                               self.rand_push_vel, # 2
                                               self.com_displacements, # 3
+                                              self.joint_friction, # 1
+                                              self.joint_damping, # 1
                                               self.contact_foot_z_force, #4
                                               self.contact_state, # 4
-                                              self.thigh_state, # 4
-                                              self.calf_state  # 4          
-                                              ),dim=-1) # 72
+                                              self.thigh_contact_state, # 4
+                                              self.calf_contact_state  # 4
+                                              ),dim=-1) # 74
          
-        # print("########################################## friction", self.env_frictions)
-        # print("########################################## restitution", self.env_restitution)    
+        # print("########################################## friction", self.joint_friction)
+        # print("########################################## damping", self.joint_damping)    
 
         # print("privileged obs ", np.shape(self.privileged_obs_buf))
         

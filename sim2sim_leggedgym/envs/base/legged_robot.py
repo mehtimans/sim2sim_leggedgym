@@ -351,6 +351,7 @@ class LeggedRobot(BaseTask):
                 r = self.dof_pos_limits[i, 1] - self.dof_pos_limits[i, 0]
                 self.dof_pos_limits[i, 0] = m - 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
                 self.dof_pos_limits[i, 1] = m + 0.5 * r * self.cfg.rewards.soft_dof_pos_limit
+
         return props
     
     def _process_rigid_body_props(self, props, env_id):
@@ -793,6 +794,15 @@ class LeggedRobot(BaseTask):
         self._init_privilaged()
         
         self.sensors = [] # added
+        self.joint_type = []
+
+        for i in range(self.num_dofs):
+             self.joint_type.append(self.gym.get_asset_joint_type(robot_asset, i))
+        # print("#################################", self.joint_type)
+
+        # [JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE, 
+        # JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, 
+        # JointType.JOINT_REVOLUTE, JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE]
 
         # body_idx = self.gym.find_asset_rigid_body_index(robot_asset, 'FL_calf') # rigid body force sensors # added
         # sensor_pose = gymapi.Transform(gymapi.Vec3(0.0, 0.0, 0.0)) 

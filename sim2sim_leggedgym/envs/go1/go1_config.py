@@ -37,7 +37,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
         c_frame_stack = 3 #3
         num_single_obs = 48
         num_observations = int(frame_stack * num_single_obs) # 48*15 = 720
-        single_num_privileged_obs = 72  
+        single_num_privileged_obs = 74  
         num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) 
         num_actions = 12
         num_envs = 500

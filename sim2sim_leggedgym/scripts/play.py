@@ -77,7 +77,6 @@ def play(args):
 
     for i in range(10*int(env.max_episode_length)):
         actions = policy(obs.detach())
-        FIX_COMMAND = True
         if FIX_COMMAND:
             env.commands[:, 0] = 0.7   # 1.0
             env.commands[:, 1] = 0.
@@ -121,9 +120,17 @@ def play(args):
         elif i==stop_rew_log:
             logger.print_rewards()
 
+def remove_LOG_DIR():
+    try:
+      os.remove("LOG_DIR.txt")
+    except:
+      print("LOG_DIR.txt is not removed.")
+
 if __name__ == '__main__':
     EXPORT_POLICY = True
+    FIX_COMMAND = True
     RECORD_FRAMES = False
     MOVE_CAMERA = False
+    remove_LOG_DIR()
     args = get_args()
     play(args)

@@ -69,6 +69,7 @@ class OnPolicyRunner:
         self.alg: PPO = alg_class(actor_critic, device=self.device, **self.alg_cfg)
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
+        self.write_key = False
 
         # init storage and model
         self.alg.init_storage(self.env.num_envs, self.num_steps_per_env, [self.env.num_obs], [self.env.num_privileged_obs], [self.env.num_actions])
@@ -149,7 +150,18 @@ class OnPolicyRunner:
         iteration_time = locs['collection_time'] + locs['learn_time']
 
         ep_string = f''
+
+        # TODO:
         if locs['ep_infos']:
+            if not self.write_key:
+                self.write_key = True
+                all_keys = ""
+                with open(os.path.join(self.log_dir, "rewards.text"), "w") as f:
+                    for key in locs['ep_infos'][0]:
+                        all_keys += key + " "
+                    all_keys = all_keys[:-1] +"\n"
+                    f.write(all_keys)
+            vars_str = ""
             for key in locs['ep_infos'][0]:
                 infotensor = torch.tensor([], device=self.device)
                 for ep_info in locs['ep_infos']:
@@ -162,6 +174,12 @@ class OnPolicyRunner:
                 value = torch.mean(infotensor)
                 self.writer.add_scalar('Episode/' + key, value, locs['it'])
                 ep_string += f"""{f'Mean episode {key}:':>{pad}} {value:.4f}\n"""
+                vars_str += str(value.item()) + " "
+            vars_str = vars_str[: -1] + "\n"
+            with open(os.path.join(self.log_dir, "rewards.text"), "a") as f:
+                f.write(vars_str)
+            
+
         mean_std = self.alg.actor_critic.std.mean()
         fps = int(self.num_steps_per_env * self.env.num_envs / (locs['collection_time'] + locs['learn_time']))
 
@@ -178,11 +196,11 @@ class OnPolicyRunner:
             self.writer.add_scalar('Train/mean_reward/time', statistics.mean(locs['rewbuffer']), self.tot_time)
             self.writer.add_scalar('Train/mean_episode_length/time', statistics.mean(locs['lenbuffer']), self.tot_time)
 
-        str = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
+        str_modified = f" \033[1m Learning iteration {locs['it']}/{self.current_learning_iteration + locs['num_learning_iterations']} \033[0m "
 
         if len(locs['rewbuffer']) > 0:
             log_string = (f"""{'#' * width}\n"""
-                          f"""{str.center(width, ' ')}\n\n"""
+                          f"""{str_modified.center(width, ' ')}\n\n"""
                           f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                           f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
@@ -194,7 +212,7 @@ class OnPolicyRunner:
                         #   f"""{'Mean episode length/episode:':>{pad}} {locs['mean_trajectory_length']:.2f}\n""")
         else:
             log_string = (f"""{'#' * width}\n"""
-                          f"""{str.center(width, ' ')}\n\n"""
+                          f"""{str_modified.center(width, ' ')}\n\n"""
                           f"""{'Computation:':>{pad}} {fps:.0f} steps/s (collection: {locs[
                             'collection_time']:.3f}s, learning {locs['learn_time']:.3f}s)\n"""
                           f"""{'Value function loss:':>{pad}} {locs['mean_value_loss']:.4f}\n"""
