@@ -39,6 +39,8 @@ import matplotlib.pyplot as plt
 
 
 from sim2sim_leggedgym.envs.base.legged_robot import LeggedRobot
+from sim2sim_leggedgym.envs.go1.go1_config import GO1sim2simCfg, GO1sim2simCfgPPO
+
 
 import os
 from sim2sim_leggedgym.utils.terrain import Terrain
@@ -49,11 +51,12 @@ from collections import deque
 
 class GO1FreeEnv(LeggedRobot):
     '''
-    IUSTFreeEnv is a class that represents a custom environment for a legged robot.
+    Go1FreeEnv is a class that represents a custom environment for a legged robot.
     '''
-    def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
+    def __init__(self, cfg: GO1sim2simCfg, sim_params, physics_engine, sim_device, headless):
         super().__init__(cfg, sim_params, physics_engine, sim_device, headless)
         # global sensors
+        self.cfg = cfg
         self.last_feet_z = 0.05
         self.feet_height = torch.zeros((self.num_envs, 2), device=self.device)
         self.reset_idx(torch.tensor(range(self.num_envs), device=self.device))
@@ -217,18 +220,17 @@ class GO1FreeEnv(LeggedRobot):
         Returns:
             [torch.Tensor]: Vector of scales used to multiply a uniform distribution in [-1, 1]
         """
-        noise_vec = torch.zeros(48)
-        # print("######################################3", np.shape(noise_vec))
+        noise_vec = torch.zeros(self.cfg.env.num_single_obs)
         self.add_noise = self.cfg.noise.add_noise
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
-        noise_vec[:3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
-        noise_vec[3:6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
+        noise_vec[:3] = noise_scales.lin_vel * noise_level 
+        noise_vec[3:6] = noise_scales.ang_vel * noise_level 
         noise_vec[6:9] = noise_scales.gravity * noise_level
-        noise_vec[9:12] = 0. # commands
-        noise_vec[12:24] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-        noise_vec[24:36] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-        noise_vec[36:48] = 0. # previous actions
+        noise_vec[9:12] = noise_scales.commands * noise_level # 0. # commands
+        noise_vec[12:24] = noise_scales.dof_pos * noise_level 
+        noise_vec[24:36] = noise_scales.dof_vel * noise_level 
+        noise_vec[36:48] = noise_scales.actions * noise_level # 0. # previous actions
         if self.cfg.terrain.measure_heights:
             noise_vec[50:235] = noise_scales.height_measurements* noise_level * self.obs_scales.height_measurements
         
@@ -346,7 +348,6 @@ class GO1FreeEnv(LeggedRobot):
         actions = torch.clip(actions, -self.cfg.normalization.clip_actions, self.cfg.normalization.clip_actions)
         # dynamic randomization
         delay = torch.rand((self.num_envs, 1), device=self.device) * self.cfg.domain_rand.action_delay
-        # delay = torch.rand((self.num_envs, 1), device=self.device)
         actions = actions.to(device=self.device)
         actions = (1 - delay) * actions + delay * self.actions
         actions += self.cfg.domain_rand.action_noise * torch.randn_like(actions) * actions
@@ -436,8 +437,8 @@ class GO1FreeEnv(LeggedRobot):
             self.privileged_obs_buf = torch.cat((self.privileged_obs_buf, heights), dim=-1)
 
         if self.add_noise:  
-            # self.noise_scale_vec = self.noise_scale_vec.to('cuda:0')  # Move to GPU if not already
-            obs_buf = obs_buf + torch.randn_like(obs_buf) * self.noise_scale_vec * self.cfg.noise.noise_level
+            noise = ((torch.rand_like(obs_buf)-0.5) * 2) * self.noise_scale_vec * obs_buf.abs()
+            obs_buf += noise
             
 
         self.obs_history.append(obs_buf.clone())
