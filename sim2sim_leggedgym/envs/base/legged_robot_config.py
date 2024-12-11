@@ -121,10 +121,10 @@ class LeggedRobotCfg(BaseConfig):
     class domain_rand:
         num_buckets_friction = 64
         randomize_friction = True
-        friction_range = [0.35 ,1.4]
+        friction_range = [0.35, 1.4]
 
         randomize_base_mass = True
-        added_mass_range = [-1.2 ,1.2]
+        added_mass_range = [-1.2, 1.2]
 
         num_buckets_restitution = 64
         randomize_restitution = True
@@ -137,7 +137,7 @@ class LeggedRobotCfg(BaseConfig):
         joint_damping_range = [0.001, 0.05]
 
         randomize_joint_friction = True
-        joint_friction_range = [0.001, 0.7]
+        joint_friction_range = [0.05, 0.2]
 
         push_robots = True
         push_interval_s = 15
@@ -151,7 +151,7 @@ class LeggedRobotCfg(BaseConfig):
         class scales:
             termination = -0.0
             tracking_lin_vel = 1.2
-            tracking_ang_vel = 0.7
+            tracking_ang_vel = 0.8
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
             orientation = -0.

@@ -144,6 +144,8 @@ class PPO:
                             self.learning_rate = min(1e-2, self.learning_rate * 1.5)
                         
                         for param_group in self.optimizer.param_groups:
+                            print('###########################3 lr', self.learning_rate)
+
                             param_group['lr'] = self.learning_rate
 
 

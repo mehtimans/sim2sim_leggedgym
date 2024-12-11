@@ -431,6 +431,9 @@ class GO1FreeEnv(LeggedRobot):
                                 self.actions
                                 ),dim=-1) # 48
         
+        print("observation ", obs_buf)
+
+        
         
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
