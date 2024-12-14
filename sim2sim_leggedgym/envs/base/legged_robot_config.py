@@ -133,10 +133,10 @@ class LeggedRobotCfg(BaseConfig):
         randomize_com_displacement = True
         com_displacement_range = [-0.05, 0.05]
 
-        randomize_joint_damping = True
+        randomize_joint_damping = False
         joint_damping_range = [0.001, 0.05]
 
-        randomize_joint_friction = True
+        randomize_joint_friction = False
         joint_friction_range = [0.05, 0.2]
 
         push_robots = True

@@ -402,8 +402,8 @@ class GO1FreeEnv(LeggedRobot):
                                               self.payloads, # 1
                                               self.rand_push_vel, # 2
                                               self.com_displacements, # 3
-                                              self.joint_friction, # 1
-                                              self.joint_damping, # 1
+                                              #   self.joint_friction, # 1
+                                              #   self.joint_damping, # 1
                                               self.contact_foot_z_force, #4
                                               self.contact_state, # 4
                                               self.thigh_contact_state, # 4
@@ -431,7 +431,7 @@ class GO1FreeEnv(LeggedRobot):
                                 self.actions
                                 ),dim=-1) # 48
         
-        print("observation ", obs_buf)
+        # print("observation ", obs_buf)
 
         
         
