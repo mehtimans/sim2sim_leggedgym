@@ -32,8 +32,8 @@ from .base_config import BaseConfig
 
 class LeggedRobotCfg(BaseConfig):
     class env:
-        num_envs = 1
-        num_observations = 48
+        num_envs = 4096
+        num_observations = 235
         num_privileged_obs = None # if not None a priviledge_obs_buf will be returned by step() (critic obs for assymetric training). None is returned otherwise 
         num_actions = 12
         env_spacing = 3.  # not used with heightfields/trimeshes 
@@ -41,7 +41,7 @@ class LeggedRobotCfg(BaseConfig):
         episode_length_s = 20 # episode length in seconds
 
     class terrain:
-        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh or uneven
+        mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
         horizontal_scale = 0.1 # [m]
         vertical_scale = 0.005 # [m]
         border_size = 25 # [m]
@@ -50,7 +50,7 @@ class LeggedRobotCfg(BaseConfig):
         dynamic_friction = 1.0
         restitution = 0.
         # rough terrain only:
-        measure_heights = False
+        measure_heights = True
         measured_points_x = [-0.8, -0.7, -0.6, -0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] # 1mx1.6m rectangle (without center line)
         measured_points_y = [-0.5, -0.4, -0.3, -0.2, -0.1, 0., 0.1, 0.2, 0.3, 0.4, 0.5]
         selected = False # select a unique terrain type and pass all arguments
@@ -70,11 +70,11 @@ class LeggedRobotCfg(BaseConfig):
         max_curriculum = 1.
         num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
-        heading_command = False # if true: compute ang vel command from heading error
+        heading_command = True # if true: compute ang vel command from heading error
         class ranges:
             lin_vel_x = [-1.0, 1.0] # min max [m/s]
             lin_vel_y = [-1.0, 1.0]   # min max [m/s]
-            ang_vel_yaw = [-1.0, 1.0]    # min max [rad/s]
+            ang_vel_yaw = [-1, 1]    # min max [rad/s]
             heading = [-3.14, 3.14]
 
     class init_state:
@@ -108,7 +108,7 @@ class LeggedRobotCfg(BaseConfig):
         default_dof_drive_mode = 3 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 3 effort)
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         replace_cylinder_with_capsule = True # replace collision cylinders with capsules, leads to faster/more stable simulation
-        flip_visual_attachments = False # Some .obj meshes must be flipped from y-up to z-up
+        flip_visual_attachments = True # Some .obj meshes must be flipped from y-up to z-up
         
         density = 0.001
         angular_damping = 0.
@@ -119,39 +119,19 @@ class LeggedRobotCfg(BaseConfig):
         thickness = 0.01
 
     class domain_rand:
-        num_buckets_friction = 64
         randomize_friction = True
-        friction_range = [0.35, 1.4]
-
-        randomize_base_mass = True
-        added_mass_range = [-1.2, 1.2]
-
-        num_buckets_restitution = 64
-        randomize_restitution = True
-        restitution_range = [0, 1.0]
-
-        randomize_com_displacement = True
-        com_displacement_range = [-0.05, 0.05]
-
-        randomize_joint_damping = False
-        joint_damping_range = [0.001, 0.05]
-
-        randomize_joint_friction = False
-        joint_friction_range = [0.05, 0.2]
-
+        friction_range = [0.5, 1.25]
+        randomize_base_mass = False
+        added_mass_range = [-1., 1.]
         push_robots = True
         push_interval_s = 15
-        max_push_vel_xy = 1
-
-        action_delay = 0.5
-        action_noise = 0.024 # 0.04
-   
+        max_push_vel_xy = 1.
 
     class rewards:
         class scales:
             termination = -0.0
-            tracking_lin_vel = 1.2
-            tracking_ang_vel = 0.8
+            tracking_lin_vel = 1.0
+            tracking_ang_vel = 0.5
             lin_vel_z = -2.0
             ang_vel_xy = -0.05
             orientation = -0.
@@ -184,16 +164,14 @@ class LeggedRobotCfg(BaseConfig):
         clip_actions = 100.
 
     class noise:
-        add_noise = True # TODO False
-        noise_level = 0.4 # scales other values
+        add_noise = True
+        noise_level = 1.0 # scales other values
         class noise_scales:
-            lin_vel = 1  #0.14
-            ang_vel = 1  #0.2
-            gravity = 1
-            commands = 0
-            dof_pos = 1 #0.01
-            dof_vel = 1   #1.5
-            actions = 0
+            dof_pos = 0.01
+            dof_vel = 1.5
+            lin_vel = 0.1
+            ang_vel = 0.2
+            gravity = 0.05
             height_measurements = 0.1
 
     # viewer camera:
@@ -222,7 +200,7 @@ class LeggedRobotCfg(BaseConfig):
             contact_collection = 2 # 0: never, 1: last sub-step, 2: all sub-steps (default=2)
 
 class LeggedRobotCfgPPO(BaseConfig):
-    seed = -1 # -1 for random
+    seed = 1
     runner_class_name = 'OnPolicyRunner'
     class policy:
         init_noise_std = 1.0
@@ -261,6 +239,6 @@ class LeggedRobotCfgPPO(BaseConfig):
         run_name = ''
         # load and resume
         resume = False
-        load_run = -1 # "/home/mehtimans/sim2sim_leggedgym/logs/go1/Dec02_16-32-23_/"  # -1 = last run
-        checkpoint = -1 #"3000" # -1 = last saved model checkpoint = "/home/mehtimans//sim2sim_leggedgym/logs/rough_iust/Nov04_18-38-25_/model_1500.pt"
+        load_run = -1 # -1 = last run
+        checkpoint = -1 # -1 = last saved model
         resume_path = None # updated from load_run and chkpt

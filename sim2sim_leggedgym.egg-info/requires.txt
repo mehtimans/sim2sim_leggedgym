@@ -1,5 +1,4 @@
 isaacgym
-rsl-rl
 matplotlib
 tqdm
 numpy==1.23.5

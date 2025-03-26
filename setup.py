@@ -4,10 +4,10 @@ from distutils.core import setup
 setup(
     name='sim2sim_leggedgym',
     version='1.0.0',
-    author='Nikita Rudin',
-    license="BSD-3-Clause",
+    author='IUST LAB',
+    license="IUST LAB",
     packages=find_packages(),
-    author_email='rudinn@ethz.ch',
+    author_email='mmhdimansouri@gmail.com',
     description='Isaac Gym environments for Legged Robots',
     install_requires=['isaacgym',
                       'matplotlib',

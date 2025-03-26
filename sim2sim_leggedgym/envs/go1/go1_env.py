@@ -27,6 +27,7 @@
 #
 # Copyright (c) 2024 Beijing RobotEra TECHNOLOGY CO.,LTD. All rights reserved.
 
+from sim2sim_leggedgym import LEGGED_GYM_ROOT_DIR, envs
 from sim2sim_leggedgym.envs.base.legged_robot_config import LeggedRobotCfg
 import isaacgym
 
@@ -36,7 +37,7 @@ from isaacgym.terrain_utils import *
 
 import torch
 import matplotlib.pyplot as plt
-
+from sim2sim_leggedgym.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 
 from sim2sim_leggedgym.envs.base.legged_robot import LeggedRobot
 from sim2sim_leggedgym.envs.go1.go1_config import GO1sim2simCfg, GO1sim2simCfgPPO
@@ -47,6 +48,7 @@ from sim2sim_leggedgym.utils.terrain import Terrain
 import numpy as np
 import time
 from collections import deque
+
 
 
 class GO1FreeEnv(LeggedRobot):
@@ -63,7 +65,6 @@ class GO1FreeEnv(LeggedRobot):
         self.error_linear_x = deque(maxlen=10)
         self.error_linear_y = deque(maxlen=10)
         self.error_angular_yaw = deque(maxlen=10)
-        self.actions_commands_all = deque(maxlen=10)
         self.log_dir = None 
         # sensors = self._create_envs()
         self.compute_observations()
@@ -197,6 +198,82 @@ class GO1FreeEnv(LeggedRobot):
         tm_params.restitution = self.cfg.terrain.restitution
 
         self.gym.add_triangle_mesh(self.sim, vertices.flatten(), triangles.flatten(), tm_params)
+
+    def _init_buffers(self):
+        """ Initialize torch tensors which will contain simulation states and processed quantities
+        """
+        # get gym GPU state tensors
+        actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
+        dof_state_tensor = self.gym.acquire_dof_state_tensor(self.sim)
+        net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
+        self.gym.refresh_dof_state_tensor(self.sim)
+        self.gym.refresh_actor_root_state_tensor(self.sim)
+        self.gym.refresh_net_contact_force_tensor(self.sim)
+
+        # create some wrapper tensors for different slices
+        self.root_states = gymtorch.wrap_tensor(actor_root_state) # (0-3 position base, 3-7 quat base, 7-10 lin vel, 10-13 ang vel)
+        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
+        self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
+        self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
+        self.base_quat = self.root_states[:, 3:7]
+        self.base_euler_xyz = self.get_euler_xyz_tensor(self.base_quat)
+        
+        # change
+        self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
+
+        # initialize some data used later on
+        self.common_step_counter = 0
+        self.extras = {}
+        self.noise_scale_vec = self._get_noise_scale_vec(self.cfg).to(device=self.device)
+        self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
+        self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
+        self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_dof_vel = torch.zeros_like(self.dof_vel)
+        self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
+        self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False) # x vel, y vel, yaw vel, heading
+        self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,) # TODO change this
+        self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
+        self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
+        self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        if self.cfg.terrain.measure_heights:
+            self.height_points = self._init_height_points()
+        self.measured_heights = 0
+
+        # joint positions offsets and PD gains
+        self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+        for i in range(self.num_dofs):
+            name = self.dof_names[i]
+            angle = self.cfg.init_state.default_joint_angles[name]
+            self.default_dof_pos[i] = angle
+            found = False
+            for dof_name in self.cfg.control.stiffness.keys():
+                if dof_name in name:
+                    self.p_gains[i] = self.cfg.control.stiffness[dof_name]
+                    self.d_gains[i] = self.cfg.control.damping[dof_name]
+                    found = True
+            if not found:
+                self.p_gains[i] = 0.
+                self.d_gains[i] = 0.
+                if self.cfg.control.control_type in ["P", "V"]:
+                    print(f"PD gain of joint {name} were not defined, setting them to zero")
+        self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
+
+        self.default_joint_pd_target = self.default_dof_pos.clone()
+        self.obs_history = deque(maxlen=self.cfg.env.frame_stack)
+        self.critic_history = deque(maxlen=self.cfg.env.c_frame_stack)
+        for _ in range(self.cfg.env.frame_stack):
+            self.obs_history.append(torch.zeros(
+                self.num_envs, self.cfg.env.num_single_obs, dtype=torch.float, device=self.device))
+        for _ in range(self.cfg.env.c_frame_stack):
+            self.critic_history.append(torch.zeros(
+                self.num_envs, self.cfg.env.single_num_privileged_obs, dtype=torch.float, device=self.device))
+
 
     def _init_privilaged(self):
 
@@ -341,8 +418,7 @@ class GO1FreeEnv(LeggedRobot):
                                           
         return props
 
-
-    def step(self, actions):
+    def pre_physics_step(self, actions):
         if self.cfg.env.use_ref_actions:
             actions += self.ref_action
         actions = torch.clip(actions, -self.cfg.normalization.clip_actions, self.cfg.normalization.clip_actions)
@@ -351,8 +427,72 @@ class GO1FreeEnv(LeggedRobot):
         actions = actions.to(device=self.device)
         actions = (1 - delay) * actions + delay * self.actions
         actions += self.cfg.domain_rand.action_noise * torch.randn_like(actions) * actions
-        # print("#####################################")
-        return super().step(actions)
+        return actions
+
+    def step(self, actions):
+        """ Apply actions, simulate, call self.post_physics_step()
+        Args:
+            actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
+        """
+        actions = self.pre_physics_step(actions)
+
+        clip_actions = self.cfg.normalization.clip_actions
+        self.actions = torch.clip(actions, -clip_actions, clip_actions).to(self.device)
+        # step physics and render each frame
+        self.render() 
+
+        for _ in range(self.cfg.control.decimation):
+            self.torques = self._compute_torques(self.actions).view(self.torques.shape)
+            self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques))
+            self.gym.simulate(self.sim)
+
+            if self.device == 'cpu':
+                self.gym.fetch_results(self.sim, True)
+            self.gym.refresh_dof_state_tensor(self.sim)
+        self.post_physics_step() # compute obs, rew, reset...
+
+        # return clipped obs, clipped states (None), rewards, dones and infos
+        clip_obs = self.cfg.normalization.clip_observations
+        self.obs_buf = torch.clip(self.obs_buf, -clip_obs, clip_obs)
+        if self.privileged_obs_buf is not None:
+            self.privileged_obs_buf = torch.clip(self.privileged_obs_buf, -clip_obs, clip_obs)
+        return self.obs_buf, self.privileged_obs_buf, self.rew_buf, self.reset_buf, self.extras
+    
+    def post_physics_step(self):
+        """ check terminations, compute observations and rewards 
+            calls self._post_physics_step_callback() for common computations 
+            calls self._draw_debug_vis() if needed
+        """
+        self.gym.refresh_actor_root_state_tensor(self.sim)
+        self.gym.refresh_net_contact_force_tensor(self.sim)
+        # self.gym.refresh_force_sensor_tensor(self.sim) # added
+
+        self.episode_length_buf += 1
+        self.common_step_counter += 1
+
+        # prepare quantities
+        self.base_quat[:] = self.root_states[:, 3:7]
+        self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
+        self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
+        self.projected_gravity[:] = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        self.base_euler_xyz = self.get_euler_xyz_tensor(self.base_quat)
+
+        self._post_physics_step_callback()
+
+        # compute observations, rewards, resets, ...
+        self.check_termination()
+        self.compute_reward()
+        env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
+        self.reset_idx(env_ids) # reset env***
+        self.compute_observations() # in some cases a simulation step might be required to refresh some obs (for example body positions)
+        
+        self.last_actions[:] = self.actions[:]
+        self.last_dof_vel[:] = self.dof_vel[:]
+        self.last_root_vel[:] = self.root_states[:, 7:13]
+
+        if self.viewer and self.enable_viewer_sync and self.debug_viz:
+            self._draw_debug_vis()
+
     
     def compute_contact_states(self):
         
@@ -376,9 +516,6 @@ class GO1FreeEnv(LeggedRobot):
 
         sin_pos = torch.sin(2 * torch.pi * phase).unsqueeze(1)
         cos_pos = torch.cos(2 * torch.pi * phase).unsqueeze(1)
-
-        stance_mask = self._get_gait_phase()
-        contact_mask = self.contact_forces[:, self.feet_indices, 2] > 5.
 
         self.command_input = torch.cat(
             (sin_pos, cos_pos, self.commands[:, :3] * self.commands_scale), dim=1) #(sin, cos) + 3 (lin_vel_x, lin_vel_y, yaw_vel)
@@ -430,8 +567,6 @@ class GO1FreeEnv(LeggedRobot):
                                 self.dof_vel * self.obs_scales.dof_vel,
                                 self.actions
                                 ),dim=-1) # 48
-        
-        # print("observation ", obs_buf)
 
         
         
@@ -445,9 +580,7 @@ class GO1FreeEnv(LeggedRobot):
             
 
         self.obs_history.append(obs_buf.clone())
-        # print('obs history:',np.shape(self.obs_history))
         self.critic_history.append(self.privileged_obs_buf.clone())
-        # print('critic obs history:',np.shape(self.critic_history))
 
         obs_buf_all = torch.stack([self.obs_history[i]
                                    for i in range(self.obs_history.maxlen)], dim=1)  
@@ -462,7 +595,7 @@ class GO1FreeEnv(LeggedRobot):
         self.error_linear_x.append((abs(linear_vel_x_error).sum())/self.num_envs)
         self.error_linear_y.append((abs(linear_vel_y_error).sum())/self.num_envs)
         self.error_angular_yaw.append((abs(angular_vel_yaw_error).sum())/self.num_envs)
-        # self.actions_commands_all.append(self.actions_commands_vx[-1] + self.actions_commands_vy[-1] + 10 * self.actions_commands_yaw[-1])
+
         len = self.error_linear_x.__len__()
         
         if os.path.exists("LOG_DIR.txt"):
@@ -473,17 +606,323 @@ class GO1FreeEnv(LeggedRobot):
         if self.log_dir:
             with open(os.path.join(self.log_dir, "error.txt"), "a") as f:
                 f.write(f"{(sum(self.error_linear_x))/len}  {(sum(self.error_linear_y))/len}  {(sum(self.error_angular_yaw))/len} \n")
-        #####
 
-    
+    def _create_envs(self):
+        """ Creates environments:
+             1. loads the robot URDF/MJCF asset,
+             2. For each environment
+                2.1 creates the environment, 
+                2.2 calls DOF and Rigid shape properties callbacks,
+                2.3 create actor with these properties and add them to the env
+             3. Store indices of different bodies of the robot
+        """
+        asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
+        asset_root = os.path.dirname(asset_path)
+        asset_file = os.path.basename(asset_path)
+
+        asset_options = gymapi.AssetOptions()
+        asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
+        asset_options.collapse_fixed_joints = self.cfg.asset.collapse_fixed_joints
+        asset_options.replace_cylinder_with_capsule = self.cfg.asset.replace_cylinder_with_capsule
+        asset_options.flip_visual_attachments = self.cfg.asset.flip_visual_attachments
+        asset_options.fix_base_link = self.cfg.asset.fix_base_link
+        asset_options.density = self.cfg.asset.density
+        asset_options.angular_damping = self.cfg.asset.angular_damping
+        asset_options.linear_damping = self.cfg.asset.linear_damping
+        asset_options.max_angular_velocity = self.cfg.asset.max_angular_velocity
+        asset_options.max_linear_velocity = self.cfg.asset.max_linear_velocity
+        asset_options.armature = self.cfg.asset.armature
+        asset_options.thickness = self.cfg.asset.thickness
+        asset_options.disable_gravity = self.cfg.asset.disable_gravity
+
+        robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
+        self.num_dof = self.gym.get_asset_dof_count(robot_asset)
+        self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
+        dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)
+        rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(robot_asset)
+        #-----------------------------------------------------------------------------------
+        # force_sensor = gymapi.ForceSensorProperties()
+        # force_sensor.enable_constraint_solver_forces = True
+        # force_sensor.enable_forward_dynamics_forces = True
+        # force_sensor.use_world_frame = False
+
+
+        # save body names from the asset
+        body_names = self.gym.get_asset_rigid_body_names(robot_asset) # body names len = 23
+        # body names: ['base', 'trunk', 'FL_hip', 'FL_thigh_shoulder', 'FL_thigh', 'FL_calf', 'FL_foot', 'FR_hip', 
+        # 'FR_thigh_shoulder', 'FR_thigh', 'FR_calf', 'FR_foot', 'RL_hip', 'RL_thigh_shoulder', 
+        # 'RL_thigh', 'RL_calf', 'RL_foot', 'RR_hip', 'RR_thigh_shoulder', 'RR_thigh', 'RR_calf', 'RR_foot', 'imu_link']
+        # print("#########################body names", body_names)
+        self.dof_names = self.gym.get_asset_dof_names(robot_asset) 
+        # print("############################################################################", self.dof_names)
+        # dof names:['FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint', 'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint', 'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint', 'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint']
+        
+        self.num_bodies = len(body_names) # 17
+        self.num_dofs = len(self.dof_names) # 12
+        feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
+        # feet names: ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot']
+        penalized_contact_names = []
+        for name in self.cfg.asset.penalize_contacts_on:
+            penalized_contact_names.extend([s for s in body_names if name in s])
+        # ['FL_thigh', 'FR_thigh', 'RL_thigh', 'RR_thigh', 'FL_calf', 'FR_calf', 'RL_calf', 'RR_calf']
+        termination_contact_names = [] # ['base']
+        for name in self.cfg.asset.terminate_after_contacts_on:
+            termination_contact_names.extend([s for s in body_names if name in s])
+        
+        thigh_contact_names = ['FL_thigh', 'FR_thigh', 'RL_thigh', 'RR_thigh']
+        calf_contact_names = ['FL_calf', 'FR_calf', 'RL_calf', 'RR_calf']
+        #############
+        body_names = self.gym.get_asset_rigid_body_names(robot_asset)
+        
+        base_link_name = "base"  # Adjust according to the URDF link name
+        trunk_link_name = "trunk"  # Adjust according to the URDF link name
+        # Get indices of specific links based on the URDF definitions
+        self.base_link_index = body_names.index("base") if "base" in body_names else None
+        self.trunk_link_index = body_names.index("trunk") if "trunk" in body_names else None
+
+        # Raise an error if any of these links are not found
+        if self.base_link_index is None or self.trunk_link_index is None:
+            raise ValueError("Base or Trunk link not found in the body names list.")
+        ##########
+
+        base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
+        self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
+        start_pose = gymapi.Transform()
+        start_pose.p = gymapi.Vec3(*self.base_init_state[:3])
+
+        self._get_env_origins()
+        env_lower = gymapi.Vec3(0., 0., 0.)
+        env_upper = gymapi.Vec3(0., 0., 0.)
+        self.actor_handles = []
+        self.envs = []
+        
+        # TODO: initialization for new privileged i added
+        self._init_privilaged()
+        
+        self.sensors = [] # added
+        self.joint_type = []
+
+        for i in range(self.num_dofs):
+             self.joint_type.append(self.gym.get_asset_joint_type(robot_asset, i))
+        # print("#################################", self.joint_type)
+
+        # [JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE, 
+        # JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, 
+        # JointType.JOINT_REVOLUTE, JointType.JOINT_REVOLUTE, JointType.JOINT_FIXED, JointType.JOINT_REVOLUTE]
+
+        # body_idx = self.gym.find_asset_rigid_body_index(robot_asset, 'FL_calf') # rigid body force sensors # added
+        # sensor_pose = gymapi.Transform(gymapi.Vec3(0.0, 0.0, 0.0)) 
+        # sensor_props = gymapi.ForceSensorProperties()
+        # sensor_props.enable_forward_dynamics_forces = True
+        # sensor_props.enable_constraint_solver_forces = True
+        # sensor_props.use_world_frame = False
+        # self.gym.create_asset_force_sensor(robot_asset, body_idx, sensor_pose, sensor_props)
+
+        for i in range(self.num_envs):
+            # create env instance
+            env_handle = self.gym.create_env(self.sim, env_lower, env_upper, int(np.sqrt(self.num_envs)))
+            pos = self.env_origins[i].clone()
+            pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
+            start_pose.p = gymapi.Vec3(*pos)
+            
+            rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
+            # print("#########################rigid_shape_props", len(rigid_shape_props))
+            self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
+            actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
+            dof_props = self._process_dof_props(dof_props_asset, i)
+            # print("#########################dof_props", len(dof_props))
+            self.gym.set_actor_dof_properties(env_handle, actor_handle, dof_props)
+            body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle) # body_props_len = 23
+            # print("##################################### body_props", len(body_props))
+            body_props = self._process_rigid_body_props(body_props, i)
+            # print("#########################body_props", len(body_props))
+            self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
+            # num_sensors = self.gym.get_actor_force_sensor_count(env_handle, actor_handle)
+            self.envs.append(env_handle)
+            self.actor_handles.append(actor_handle)
+        
+        
+        self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i in range(len(feet_names)):
+            self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
+
+        self.penalised_contact_indices = torch.zeros(len(penalized_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i in range(len(penalized_contact_names)):
+            self.penalised_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], penalized_contact_names[i])
+
+        self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i in range(len(termination_contact_names)):
+            self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
+        
+        self.thigh_contact_indices = torch.zeros(len(thigh_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i in range(len(thigh_contact_names)):
+            self.thigh_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], thigh_contact_names[i])
+        
+        self.calf_contact_indices = torch.zeros(len(calf_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i in range(len(calf_contact_names)):
+            self.calf_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], calf_contact_names[i])
+        
+        
+        # for env, actor_handle in zip(self.envs, self.actor_handles): 
+        #     num_sensors = self.gym.get_actor_force_sensor_count(env, actor_handle)
+
+        #     for i in range(num_sensors):
+        #         sensor = self.gym.get_actor_force_sensor(env, actor_handle, i)
+        #         self.sensors.append(sensor)
+        #         print('force_sensor:', self.sensors)
+                            
+        # self.gym.enable_actor_dof_force_sensors(self.envs[0], self.actor_handles[0])
+        # self.forces = self.gym.get_actor_dof_forces(self.envs[0], self.actor_handles[0])
+        # print('force', self.forces)
+        # print('num sensor:', num_sensors)
+            
+        # sensor_pose = gymapi.Transform()
+        # for name in feet_names:
+        #     sensor_options = gymapi.ForceSensorProperties()
+        #     sensor_options.enable_forward_dynamics_forces = False # for example gravity
+        #     sensor_options.enable_constraint_solver_forces = True # for example contacts
+        #     sensor_options.use_world_frame = True # report forces in world frame (easier to get vertical components)
+        #     index = self.gym.find_asset_rigid_body_index(robot_asset, name)
+        #     self.gym.create_asset_force_sensor(robot_asset, index, sensor_pose, sensor_options)
+        
+        
+        # sensor_tensor = self.gym.acquire_force_sensor_tensor(self.sim)
+        # self.gym.refresh_force_sensor_tensor(self.sim)
+        # self.sensor_forces = force_sensor_readings.view(self.num_envs, 4, 6)[..., :3]
+
+
     def reset_idx(self, env_ids):
-        super().reset_idx(env_ids)
-        #print('reset_id from iust_env function:',env_ids)
+
+        """ Reset some environments.
+            Calls self._reset_dofs(env_ids), self._reset_root_states(env_ids), and self._resample_commands(env_ids)
+            [Optional] calls self._update_terrain_curriculum(env_ids), self.update_command_curriculum(env_ids) and
+            Logs episode info
+            Resets some buffers
+
+        Args:
+            env_ids (list[int]): List of environment ids which must be reset
+        """
+
+        if len(env_ids) == 0:
+            return
+        # update curriculum
+        if self.cfg.terrain.curriculum:
+            self._update_terrain_curriculum(env_ids)
+        # avoid updating command curriculum at each step since the maximum command is common to all envs
+        if self.cfg.commands.curriculum and (self.common_step_counter % self.max_episode_length==0):
+            self.update_command_curriculum(env_ids)
+        
+        # reset robot states
+        self._reset_dofs(env_ids)
+        self._reset_root_states(env_ids)
+
+        self._resample_commands(env_ids)
+        # print('env_ids:',env_ids)
+        
+
+        # reset buffers
+        self.last_actions[env_ids] = 0.
+        self.last_dof_vel[env_ids] = 0.
+        self.feet_air_time[env_ids] = 0.
+        self.episode_length_buf[env_ids] = 0
+        self.reset_buf[env_ids] = 1
+        # fill extras
+        self.extras["episode"] = {}
+        for key in self.episode_sums.keys():
+            self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
+            self.episode_sums[key][env_ids] = 0.
+        # log additional curriculum info
+        if self.cfg.terrain.curriculum:
+            self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
+        if self.cfg.commands.curriculum:
+            self.extras["episode"]["max_command_x"] = self.command_ranges["lin_vel_x"][1]
+        # send timeout info to the algorithm
+        if self.cfg.env.send_timeouts:
+            self.extras["time_outs"] = self.time_out_buf
+            
+        # fix reset gravity bug
+        self.base_quat[env_ids] = self.root_states[env_ids, 3:7]
+        self.base_euler_xyz = self.get_euler_xyz_tensor(self.base_quat)
 
         for i in range(self.obs_history.maxlen):
             self.obs_history[i][env_ids] *= 0
         for i in range(self.critic_history.maxlen):
             self.critic_history[i][env_ids] *= 0
+
+    def _get_env_origins(self):
+        """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
+            Otherwise create a grid.
+        """
+        if self.cfg.terrain.mesh_type in ["heightfield", "trimesh"]:
+            self.custom_origins = True
+            self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
+            # put robots at the origins defined by the terrain
+            max_init_level = self.cfg.terrain.max_init_terrain_level
+            if not self.cfg.terrain.curriculum: max_init_level = self.cfg.terrain.num_rows - 1
+            self.terrain_levels = torch.randint(0, max_init_level+1, (self.num_envs,), device=self.device)
+            self.terrain_types = torch.div(torch.arange(self.num_envs, device=self.device), (self.num_envs/self.cfg.terrain.num_cols), rounding_mode='floor').to(torch.long)
+            self.max_terrain_level = self.cfg.terrain.num_rows
+            self.terrain_origins = torch.from_numpy(self.terrain.env_origins).to(self.device).to(torch.float)
+            self.env_origins[:] = self.terrain_origins[self.terrain_levels, self.terrain_types]
+        else:
+            self.custom_origins = False
+            self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
+            # create a grid of robots
+            num_cols = np.floor(np.sqrt(self.num_envs))
+            num_rows = np.ceil(self.num_envs / num_cols)
+            xx, yy = torch.meshgrid(torch.arange(num_rows), torch.arange(num_cols), indexing='ij')
+            spacing = self.cfg.env.env_spacing
+            self.env_origins[:, 0] = spacing * xx.flatten()[:self.num_envs]
+            self.env_origins[:, 1] = spacing * yy.flatten()[:self.num_envs]
+            self.env_origins[:, 2] = 0.
+
+    def _get_heights(self, env_ids=None):
+        """ Samples heights of the terrain at required points around each robot.
+            The points are offset by the base's position and rotated by the base's yaw
+
+        Args:
+            env_ids (List[int], optional): Subset of environments for which to return the heights. Defaults to None.
+
+        Raises:
+            NameError: [description]
+
+        Returns:
+            [type]: [description]
+        """
+        if self.cfg.terrain.mesh_type == 'plane':
+            return torch.zeros(self.num_envs, self.num_height_points, device=self.device, requires_grad=False)
+        elif self.cfg.terrain.mesh_type == 'none':
+            raise NameError("Can't measure height with terrain mesh type 'none'")
+
+        if env_ids:
+            points = quat_apply_yaw(self.base_quat[env_ids].repeat(1, self.num_height_points), self.height_points[env_ids]) + (self.root_states[env_ids, :3]).unsqueeze(1)
+        else:
+            points = quat_apply_yaw(self.base_quat.repeat(1, self.num_height_points), self.height_points) + (self.root_states[:, :3]).unsqueeze(1)
+
+        points += self.terrain.cfg.border_size
+        points = (points/self.terrain.cfg.horizontal_scale).long()
+        px = points[:, :, 0].view(-1)
+        py = points[:, :, 1].view(-1)
+        px = torch.clip(px, 0, self.height_samples.shape[0]-2)
+        py = torch.clip(py, 0, self.height_samples.shape[1]-2)
+
+        heights1 = self.height_samples[px, py]
+        heights2 = self.height_samples[px+1, py]
+        heights3 = self.height_samples[px, py+1]
+        heights = torch.min(heights1, heights2)
+        heights = torch.min(heights, heights3)
+
+        return heights.view(self.num_envs, -1) * self.terrain.cfg.vertical_scale
+
+
+    def get_euler_xyz_tensor(self, quat):
+        r, p, w = get_euler_xyz(quat)
+        # stack r, p, w in dim1
+        euler_xyz = torch.stack((r, p, w), dim=1)
+        euler_xyz[euler_xyz > np.pi] -= 2 * np.pi
+        return euler_xyz
+
+    
 
 # ================================================ Rewards ================================================== #
 

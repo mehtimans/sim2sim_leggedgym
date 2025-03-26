@@ -128,7 +128,7 @@ def get_load_path(root, load_run=-1, checkpoint=-1):
         model = "model_{}.pt".format(checkpoint) 
 
     load_path = os.path.join(load_run, model)
-    return load_path
+    return load_path, load_run
 
 def update_cfg_from_args(env_cfg, cfg_train, args):
     # seed
@@ -192,7 +192,7 @@ def export_policy_as_jit(actor_critic, path):
         exporter.export(path)
     else: 
         os.makedirs(path, exist_ok=True)
-        path = os.path.join(path, 'policy_1.pt')
+        path = os.path.join(path, 'jit_policy.pt')
         model = copy.deepcopy(actor_critic.actor).to('cpu')
         traced_script_module = torch.jit.script(model)
         traced_script_module.save(path)

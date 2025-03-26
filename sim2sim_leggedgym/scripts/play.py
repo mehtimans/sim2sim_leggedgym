@@ -30,23 +30,26 @@
 
 from sim2sim_leggedgym import LEGGED_GYM_ROOT_DIR
 import os
+import pprint
 
 import isaacgym
 from sim2sim_leggedgym.envs import *
-from sim2sim_leggedgym.utils import  get_args, export_policy_as_jit, task_registry, Logger
+from sim2sim_leggedgym.utils import  get_args, export_policy_as_jit, task_registry, Logger, get_load_path
 
 import numpy as np
 import torch
 
 
 def play(args):
-    env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
+    env_cfg, train_cfg ,train_cfg_dict, env_cfg_dict = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 50)
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.num_cols = 5
     env_cfg.terrain.curriculum = False
     env_cfg.noise.add_noise = False
+    env_cfg.domain_rand.action_noise = False
+    env_cfg.domain_rand.action_delay = False
     env_cfg.domain_rand.randomize_friction = False
     env_cfg.domain_rand.push_robots = False
     env_cfg.domain_rand.randomize_base_mass = False
@@ -55,20 +58,42 @@ def play(args):
     env_cfg.domain_rand.randomize_joint_damping = False
     env_cfg.domain_rand.randomize_joint_friction = False
 
+    
     # prepare environment
-    env, _, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
+    env, _, env_cfg_dict = task_registry.make_env(name=args.task, args=args)
     obs = env.get_observations()
+    
+
     # load policy
     train_cfg.runner.resume = True
-    ppo_runner, train_cfg, train_cfg_dict, log_dir = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg)
+    ppo_runner, train_cfg, train_cfg_dict, _= task_registry.make_alg_runner(env=env, name=args.task, args=args)
+
+
+    # the log root directory.
+    log_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name)
+    
+    # print configurations in play mode 
+    print('\n\nEnvironment Configuration:')
+    pprint.pprint(env_cfg_dict, indent=1)
+    print('\n\nTraining Configuration:')
+    pprint.pprint(train_cfg_dict, indent=1)
+
+    ## load policy using nn on policy runner 
     policy = ppo_runner.get_inference_policy(device=env.device)
-    # policy = torch.jit.load("/home/mehtimans/sim2sim_leggedgym/logs/go1/Nov11_08-58-40_/23_sim2sim_first.pt")
+
+    ## load policy as jit 
+    # jit_path = os.path.join(log_root, 'Mar05_14-56-16_/JIT_POLICY/jit_policy.pt')
+    # print(f"Loading jit model from: {jit_path}")
+    # policy = torch.jit.load(jit_path)
+    
+    # path to Loading model
+    _, loading_model_path = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
     
     # export policy as a jit module (used to run it from C++)
-    if EXPORT_POLICY:
-        path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
-        export_policy_as_jit(ppo_runner.alg.actor_critic, path)
-        print('Exported policy as jit script to: ', path)
+    if train_cfg.runner.Export_Policy_as_jit:
+        jit_path_load = os.path.join(loading_model_path, 'JIT_POLICY')
+        export_policy_as_jit(ppo_runner.alg.actor_critic, jit_path_load)
+        print('Exported policy as jit script to: ', jit_path_load)
 
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging
@@ -132,7 +157,6 @@ def remove_LOG_DIR():
       print("LOG_DIR.txt is not removed.")
 
 if __name__ == '__main__':
-    EXPORT_POLICY = True
     FIX_COMMAND = True
     RECORD_FRAMES = False
     MOVE_CAMERA = False

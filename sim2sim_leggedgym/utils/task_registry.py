@@ -58,9 +58,11 @@ class TaskRegistry():
     def get_cfgs(self, name) -> Tuple[LeggedRobotCfg, LeggedRobotCfgPPO]:
         train_cfg = self.train_cfgs[name]
         env_cfg = self.env_cfgs[name]
+        train_cfg_dict = class_to_dict(train_cfg)
+        env_cfg_dict = class_to_dict(env_cfg)
         # copy seed
         env_cfg.seed = train_cfg.seed
-        return env_cfg, train_cfg
+        return env_cfg, train_cfg, train_cfg_dict, env_cfg_dict 
     
     def make_env(self, name, args=None, env_cfg=None) -> Tuple[VecEnv, LeggedRobotCfg]:
         """ Creates an environment either from a registered namme or from the provided config file.
@@ -87,7 +89,7 @@ class TaskRegistry():
             raise ValueError(f"Task with name: {name} was not registered")
         if env_cfg is None:
             # load config files
-            env_cfg, _ = self.get_cfgs(name)
+            env_cfg, _, _, env_cfg_dict = self.get_cfgs(name)
         # override cfg from args (if specified)
         env_cfg, _ = update_cfg_from_args(env_cfg, None, args)
         env_cfg_dict = class_to_dict(env_cfg)
@@ -129,13 +131,13 @@ class TaskRegistry():
             if name is None:
                 raise ValueError("Either 'name' or 'train_cfg' must be not None")
             # load config files
-            _, train_cfg = self.get_cfgs(name)
+            _, train_cfg, _, _= self.get_cfgs(name)
         else:
             if name is not None:
                 print(f"'train_cfg' provided -> Ignoring 'name={name}'")
         # override cfg from args (if specified)
         _, train_cfg = update_cfg_from_args(None, train_cfg, args)
-
+        train_cfg_dict = class_to_dict(train_cfg)
         if log_root=="default":
             log_root = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name)
             log_dir = os.path.join(log_root, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + train_cfg.runner.run_name)
@@ -143,14 +145,13 @@ class TaskRegistry():
             log_dir = None
         else:
             log_dir = os.path.join(log_root, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + train_cfg.runner.run_name)
-        
-        train_cfg_dict = class_to_dict(train_cfg)
+
         runner = OnPolicyRunner(env, train_cfg_dict, log_dir, device=args.rl_device)
         #save resume path before creating a new log_dir
         resume = train_cfg.runner.resume
         if resume:
             # load previously trained model
-            resume_path = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
+            resume_path, _ = get_load_path(log_root, load_run=train_cfg.runner.load_run, checkpoint=train_cfg.runner.checkpoint)
             print(f"Loading model from: {resume_path}")
             runner.load(resume_path)
         return runner, train_cfg, train_cfg_dict, log_dir
