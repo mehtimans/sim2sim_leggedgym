@@ -74,11 +74,10 @@ class GO1sim2simCfg(LeggedRobotCfg):
     
     ### gaits
     class curriculum_thresholds:
-        c = {
-        "tracking_lin_vel" : 0.8,  
-        "tracking_ang_vel" : 0.5,
-        "tracking_contacts_shaped_force" : 0.8,  
-        "tracking_contacts_shaped_vel" : 0.8}
+        tracking_lin_vel = 0.8
+        tracking_ang_vel = 0.5
+        tracking_contacts_shaped_force = 0.8
+        tracking_contacts_shaped_vel = 0.8
     ### gaits
 
 
@@ -199,7 +198,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
         action_noise = 0.024 # 0.04
 
         ### gaits
-        lag_timesteps = 6
+        lag_timesteps = 7
         randomize_lag_timesteps = True
         ### gaits
 
@@ -211,7 +210,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
 
     class control(LeggedRobotCfg.control):
         # PD Drive parameters:
-        control_type = 'P'
+        control_type = 'P' # for now just P
         stiffness = {'joint': 20.}  # [N*m/rad]
         damping = {'joint': 0.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
@@ -278,8 +277,8 @@ class GO1sim2simCfg(LeggedRobotCfg):
         gait_force_sigma = 100
         kappa_gait_probs = 0.07
         gait_vel_sigma = 10
-        # only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
-        # only_positive_rewards_ji22_style = False
+        positive_rew_exp_negative_rew = False
+        sigma_rew_negative = 0.02
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 1. # percentage of urdf limits, values above this limit are penalized
         soft_dof_vel_limit = 1.
@@ -288,7 +287,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
         max_contact_force = 100. # forces above this value are penalized
         # ADDED 
         boddy_height_range = [0.3, 0.5]
-        sigma_rew_neg = 0.02
+        
         # base_height_target = 0.5
         ### gaits
 
