@@ -147,6 +147,7 @@ class GO1FreeEnv(LeggedRobot):
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.base_pos = self.root_states[:, 0:3] #### gait
+        print("base pos:########################################### ", self.base_pos)
         self.base_quat = self.root_states[:, 3:7]
         self.base_euler_xyz = self.get_euler_xyz_tensor(self.base_quat)
         self.foot_velocities = self.rigid_body_state.view(self.num_envs, self.num_bodies, 13)[:, self.feet_indices, 7:10] #### gait it becomes (num_envs, num_feet, xyz axis)
@@ -182,7 +183,7 @@ class GO1FreeEnv(LeggedRobot):
         self.measured_heights = 0
         
         ### gait
-        # self._init_command_distribution(torch.arange(self.num_envs, device=self.device))
+        self._init_command_distribution(torch.arange(self.num_envs, device=self.device))
         ### gait
 
         # joint positions offsets and PD gains
@@ -223,7 +224,7 @@ class GO1FreeEnv(LeggedRobot):
         self.phases_info = torch.zeros(self.num_envs, 11) # Frequency, phase, offset, bounds, duration  ### gait change hard code
         self.desired_contact_states = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False) ### gait change hard code
         ### gait
-        # self.prev_foot_velocities = self.foot_velocities.clone() check!!
+        self.prev_foot_velocities = self.foot_velocities.clone() ## check!!
         ### gait
 
 
@@ -387,7 +388,7 @@ class GO1FreeEnv(LeggedRobot):
         actions += self.cfg.domain_rand.action_noise * torch.randn_like(actions) * actions
         
         ### gait
-        # self.prev_foot_velocities = self.foot_velocities.clone()
+        self.prev_foot_velocities = self.foot_velocities.clone()
         ### gait
 
         return actions
@@ -435,6 +436,7 @@ class GO1FreeEnv(LeggedRobot):
 
         # prepare quantities
         self.base_pos[:] = self.root_states[:, 0:3] ### gate
+        # print("#########################", self.base_pos)
         self.base_quat[:] = self.root_states[:, 3:7]
         self.base_lin_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel[:] = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
@@ -470,7 +472,7 @@ class GO1FreeEnv(LeggedRobot):
         env_ids = (self.episode_length_buf % int(self.cfg.commands.resampling_time / self.dt)==0).nonzero(as_tuple=False).flatten()
         self._resample_commands(env_ids)
         ### gait
-        # self._step_contact_targets()
+        self._step_contact_targets()
         ### gait
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
@@ -511,23 +513,25 @@ class GO1FreeEnv(LeggedRobot):
                                               self.base_ang_vel * self.obs_scales.ang_vel, # 3
                                               self.projected_gravity, # 3
                                               self.commands[:, :3] * self.commands_scale, # 3
+                                              self.commands[:, 4:],
                                               (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos, # 12
                                               self.dof_vel * self.obs_scales.dof_vel, # 12
                                               self.actions, # 12
                                               self.env_frictions, # 1
-                                              self.env_restitution, # 1
-                                              self.payloads, # 1
-                                              self.rand_push_vel, # 2
-                                              self.com_displacements, # 3
-                                              #   self.joint_friction, # 1
-                                              #   self.joint_damping, # 1
-                                              self.contact_foot_z_force, #4
-                                              self.contact_state, # 4
-                                              self.thigh_contact_state, # 4
-                                              self.calf_contact_state  # 4
+                                              self.clock_inputs
+                                              # self.env_restitution, # 1
+                                              # self.payloads, # 1
+                                              # self.rand_push_vel, # 2
+                                              # self.com_displacements, # 3
+                                              # self.joint_friction, # 1
+                                              # self.joint_damping, # 1
+                                              # self.contact_foot_z_force, #4
+                                              # self.contact_state, # 4
+                                              # self.thigh_contact_state, # 4
+                                              # self.calf_contact_state  # 4
                                               ),dim=-1) # 74
-         
-        # print("########################################## friction", self.joint_friction)
+          
+        # print("########################################## command", self.commands)
         # print("########################################## damping", self.joint_damping)    
 
         # print("privileged obs ", np.shape(self.privileged_obs_buf))
@@ -543,13 +547,15 @@ class GO1FreeEnv(LeggedRobot):
                                 self.base_ang_vel  * self.obs_scales.ang_vel,
                                 self.projected_gravity,
                                 self.commands[:, :3] * self.commands_scale,
+                                self.commands[:, 4:],
                                 (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
                                 self.dof_vel * self.obs_scales.dof_vel,
-                                self.actions
+                                self.actions,
+                                self.clock_inputs
                                 ),dim=-1) # 48
 
         
-        
+    
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
             self.privileged_obs_buf = torch.cat((self.privileged_obs_buf, heights), dim=-1)
@@ -779,9 +785,6 @@ class GO1FreeEnv(LeggedRobot):
         # TODO: initialization for new privileged i added
         self._init_privilaged()
         
-        ### gait
-        self._init_custom_buffer()
-        ### gait
         
         self.joint_type = []
 
@@ -808,6 +811,8 @@ class GO1FreeEnv(LeggedRobot):
             body_props = self._process_rigid_body_props(body_props, i)
             # print("#########################body_props", len(body_props))
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
+            # act_count = self.gym.get_actor_actuator_count(env_handle, actor_handle)
+            # print("*******************************************************act_count:", act_count)
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
         
@@ -832,7 +837,10 @@ class GO1FreeEnv(LeggedRobot):
         for i in range(len(calf_contact_names)):
             self.calf_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], calf_contact_names[i])
         
-        
+        ### gait
+        self._init_custom_buffer()
+        ### gait
+
     def reset_idx(self, env_ids):
 
         """ Reset some environments.
@@ -962,6 +970,266 @@ class GO1FreeEnv(LeggedRobot):
         euler_xyz = torch.stack((r, p, w), dim=1)
         euler_xyz[euler_xyz > np.pi] -= 2 * np.pi
         return euler_xyz
+    
+    ###################################### gait
+
+    def _resample_commands(self, env_ids): 
+        """ Randommly select commands of some environments
+
+        Args:
+            env_ids (List[int]): Environments ids for which new commands are needed
+        """
+        timesteps = int(self.cfg.commands.resampling_time / self.dt) # self.dt is sim_dt * decimation / timesteps = 500
+        ep_len = min(self.max_episode_length, timesteps) ### ep_len = 500
+        # print("#######################################3 envids", env_ids)
+        # update curricula based on terminated environment bins and categories
+        for i, curriculum in enumerate(self.curricula): ### i = [0, 1, 2, 3] and curriculum is 4 curriculum class that initialized in _init_command_distribution
+            env_ids_in_category = self.env_command_categories[env_ids.cpu()] == i ## self.env_command_categories contains all environment categories.
+            # env_ids_in_category is a boolean array indicating which env_ids belong to a specific category.
+            if isinstance(env_ids_in_category, np.bool_) or len(env_ids_in_category) == 1: # env_ids_in_category has one boolean element loop like [true]
+                env_ids_in_category = torch.tensor([env_ids_in_category], dtype=torch.bool)
+            elif len(env_ids_in_category) == 0:
+                continue      
+            # The two lines above ensure that env_ids_in_category contains at least one element. If it is empty, the loop will continue.
+            
+            env_ids_in_category = env_ids[env_ids_in_category]
+            # At last, env_ids_in_category will be a torch tensor containing the indices of environments that belong to category i.
+            
+            task_rewards, success_thresholds = [], []
+            for key in ["tracking_lin_vel", "tracking_ang_vel", "tracking_contacts_shaped_force",
+                        "tracking_contacts_shaped_vel"]:
+                if key in self.command_sums.keys():
+                
+                    task_rewards.append(self.command_sums[key][env_ids_in_category] / ep_len)
+                    success_thresholds.append(self.curriculum_thresholds[key] * self.reward_scales[key])
+            
+            # print("############################################ task rewards", task_rewards)
+            # print("############################################ success_thresholds", success_thresholds) # note to env_ids_in_category
+            # # success_thresholds [0.015999999642372132, 0.004999999888241291, 0.015999999642372132, 0.0479999989271164] always?
+
+            old_bins = self.env_command_bins[env_ids_in_category.cpu().numpy()]### wrong
+            # print("################################################", old_bins) # This shows which bin is selected from all available bins. 
+            # Each bin is a combination of all random commands.
+            if len(success_thresholds) > 0:
+                curriculum.update(old_bins, task_rewards, success_thresholds,
+                                  local_range=np.array(
+                                      [0.35, 0.25, 0.25, 0.25, 0.25, 1.0, 1.0, 1.0, 1.0, 1.0,
+                                       1.0]))
+                                           
+        # assign resampled environments to new categories
+        random_env_floats = torch.rand(len(env_ids), device=self.device) # it especified a number between 0 and 1 in number of env_ids length 
+
+        probability_per_category = 1. / len(self.category_names) # probability of each category_ all has sam prob 
+                
+        # category_env_ids is a list containing len(self.category_names) torch tensors. Each tensor holds 
+        # the indices of env_ids that, based on random_env_floats and probability_per_category, have been 
+        # randomly assigned to that category.
+        category_env_ids = [env_ids[torch.logical_and(probability_per_category * i <= random_env_floats,
+                                                      random_env_floats < probability_per_category * (i + 1))] for i in range(len(self.category_names))]
+                    
+
+        # sample from new category curricula
+        # print('###################################### env_ids_in_category', category_env_ids)
+        for i, (category, env_ids_in_category, curriculum) in enumerate(
+                zip(self.category_names, category_env_ids, self.curricula)):
+
+            batch_size = len(env_ids_in_category)
+            if batch_size == 0: continue
+            
+
+            new_phas_info, new_bin_inds = curriculum.sample(batch_size=batch_size)
+            self.env_command_bins[env_ids_in_category.cpu().numpy()] = new_bin_inds
+            self.env_command_categories[env_ids_in_category.cpu().numpy()] = i
+            self.phases_info = self.phases_info.to(self.device) 
+            self.phases_info[env_ids_in_category, :] = torch.Tensor(new_phas_info[:, :11]).to(self.device)
+        self.commands[env_ids, 0] = torch_rand_float(self.command_ranges["lin_vel_x"][0], self.command_ranges["lin_vel_x"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        self.commands[env_ids, 1] = torch_rand_float(self.command_ranges["lin_vel_y"][0], self.command_ranges["lin_vel_y"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        if self.cfg.commands.heading_command:
+            self.commands[env_ids, 3] = torch_rand_float(self.command_ranges["heading"][0], self.command_ranges["heading"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+        else:
+            self.commands[env_ids, 2] = torch_rand_float(self.command_ranges["ang_vel_yaw"][0], self.command_ranges["ang_vel_yaw"][1], (len(env_ids), 1), device=self.device).squeeze(1)
+
+        # set small commands to zero
+        self.commands[env_ids, :2] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.2).unsqueeze(1)
+       
+        random_env_floats = torch.rand(len(env_ids), device=self.device)
+        pronking_envs = env_ids[random_env_floats < 1/4]
+        trotting_envs = env_ids[torch.logical_and(1/4 <= random_env_floats, random_env_floats < 2/4)]
+        pacing_envs = env_ids[torch.logical_and(2/4 <= random_env_floats, random_env_floats < 3/4)]
+        bounding_envs = env_ids[torch.logical_and(3/4 <= random_env_floats, random_env_floats < 4/4)]
+
+     
+
+        foot_0 = torch.zeros(self.num_envs).to(self.device)
+        foot_1 = torch.zeros(self.num_envs).to(self.device)
+        foot_2 = torch.zeros(self.num_envs).to(self.device)
+        foot_3 = torch.zeros(self.num_envs).to(self.device)
+     
+        foot_0[bounding_envs] =  0.5
+        foot_1[bounding_envs] =  0.5
+
+        foot_0[pacing_envs] = 0.5
+        foot_2[pacing_envs] = 0.5
+
+        foot_0[trotting_envs] = 0.5
+        foot_3[trotting_envs] = 0.5
+        
+       
+        self.commands[env_ids, 4] = self.phases_info[env_ids, 0]
+        self.commands[env_ids, 5] = foot_1[env_ids]
+        self.commands[env_ids, 6] = foot_2[env_ids]
+        self.commands[env_ids, 7] = foot_3[env_ids]
+
+        # ADDED
+        # There is a difference between self.command_sums and self.episode_sums initializations. self.episode_sums is initialized 
+        # when an environment needs to reset due to a termination condition, while self.command_sums is initialized when the resample_command function 
+        # is called—either because of termination or because the command resampling time has been reached.
+
+        for key in self.command_sums.keys():
+            self.command_sums[key][env_ids] = 0.
+  
+
+    def _step_contact_targets(self):
+        frequencies = self.phases_info[:, 0]
+        phases = self.phases_info[:, 1]
+        # print(phases)
+        offsets = self.phases_info[:, 2]
+        bounds = self.phases_info[:, 3]
+        durations = self.phases_info[:, 4]
+        self.gait_indices = torch.remainder(self.gait_indices + self.dt * frequencies, 1.0).to(self.device)
+
+        if self.cfg.commands.pacing_offset:
+            foot_indices = [self.gait_indices + phases + offsets + bounds,
+                            self.gait_indices + bounds,
+                            self.gait_indices + offsets,
+                            self.gait_indices + phases]
+
+            # print(offsets)
+            # print(bounds)
+        else:
+            foot_indices = [self.gait_indices + self.commands[:,5] + self.commands[:,6] + self.commands[:,7],
+                            self.gait_indices + self.commands[:,5] ,
+                            self.gait_indices + self.commands[:,6] ,
+                            self.gait_indices + self.commands[:,7] ]
+        # print("HERE")
+        # print(phases)
+        self.clock_inputs[:, 0] = torch.sin(2 * np.pi * foot_indices[0])
+        self.clock_inputs[:, 1] = torch.sin(2 * np.pi * foot_indices[1])
+        self.clock_inputs[:, 2] = torch.sin(2 * np.pi * foot_indices[2])
+        self.clock_inputs[:, 3] = torch.sin(2 * np.pi * foot_indices[3])
+        self.foot_indices = torch.remainder(torch.cat([foot_indices[i].unsqueeze(1) for i in range(4)], dim=1), 1.0)
+        # print(self.foot_indices)
+        # von mises distribution
+        kappa = self.cfg.rewards.kappa_gait_probs
+        smoothing_cdf_start = torch.distributions.normal.Normal(0,
+                                                                kappa).cdf  # (x) + torch.distributions.normal.Normal(1, kappa).cdf(x)) / 2
+
+        smoothing_multiplier_FL = (smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0)) * (
+                1 - smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0) - 0.5)) +
+                                    smoothing_cdf_start(torch.remainder(foot_indices[0], 1.0) - 1) * (
+                                            1 - smoothing_cdf_start(
+                                        torch.remainder(foot_indices[0], 1.0) - 0.5 - 1)))
+        smoothing_multiplier_FR = (smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0)) * (
+                1 - smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0) - 0.5)) +
+                                    smoothing_cdf_start(torch.remainder(foot_indices[1], 1.0) - 1) * (
+                                            1 - smoothing_cdf_start(
+                                        torch.remainder(foot_indices[1], 1.0) - 0.5 - 1)))
+        smoothing_multiplier_RL = (smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0)) * (
+                1 - smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0) - 0.5)) +
+                                    smoothing_cdf_start(torch.remainder(foot_indices[2], 1.0) - 1) * (
+                                            1 - smoothing_cdf_start(
+                                        torch.remainder(foot_indices[2], 1.0) - 0.5 - 1)))
+        smoothing_multiplier_RR = (smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0)) * (
+                1 - smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0) - 0.5)) +
+                                    smoothing_cdf_start(torch.remainder(foot_indices[3], 1.0) - 1) * (
+                                            1 - smoothing_cdf_start(
+                                        torch.remainder(foot_indices[3], 1.0) - 0.5 - 1)))
+        
+        self.desired_contact_states[:, 0] = smoothing_multiplier_FL
+        self.desired_contact_states[:, 1] = smoothing_multiplier_FR
+        self.desired_contact_states[:, 2] = smoothing_multiplier_RL
+        self.desired_contact_states[:, 3] = smoothing_multiplier_RR
+        # print(self.desired_contact_states[0, 0:4])
+        # print("-------------------->>>>>>>>>>>>>>>>>>>")
+        # print(self.foot_indices)
+    
+    def _init_command_distribution(self, envs_ids):
+        # new style curriculum
+        self.category_names = ['pronk', 'trot', 'pace', 'bound']
+        CurriculumClass = RewardThresholdCurriculum
+        self.curricula = []
+        for category in self.category_names:
+            self.curricula += [CurriculumClass( seed = self.cfg.commands.curriculum_seed,
+                                               
+                                                gait_frequency = (self.cfg.commands.limit_gait_frequency[0],
+                                                                 self.cfg.commands.limit_gait_frequency[1],
+                                                                 self.cfg.commands.num_bins_gait_frequency),
+
+                                                gait_phase = (self.cfg.commands.limit_gait_phase[0],
+                                                              self.cfg.commands.limit_gait_phase[1],
+                                                              self.cfg.commands.num_bins_gait_phase),
+
+                                                gait_offset = (self.cfg.commands.limit_gait_offset[0],
+                                                               self.cfg.commands.limit_gait_offset[1],
+                                                               self.cfg.commands.num_bins_gait_offset),
+
+                                                gait_bounds = (self.cfg.commands.limit_gait_bound[0],
+                                                               self.cfg.commands.limit_gait_bound[1],
+                                                               self.cfg.commands.num_bins_gait_bound),
+
+                                                gait_duration = (self.cfg.commands.limit_gait_duration[0],
+                                                                 self.cfg.commands.limit_gait_duration[1],
+                                                                 self.cfg.commands.num_bins_gait_duration),
+
+                                                footswing_height = (self.cfg.commands.limit_footswing_height[0],
+                                                                    self.cfg.commands.limit_footswing_height[1],
+                                                                    self.cfg.commands.num_bins_footswing_height),
+
+                                                body_pitch = (self.cfg.commands.limit_body_pitch[0],
+                                                              self.cfg.commands.limit_body_pitch[1],
+                                                              self.cfg.commands.num_bins_body_pitch),
+
+                                                body_roll = (self.cfg.commands.limit_body_roll[0],
+                                                             self.cfg.commands.limit_body_roll[1],
+                                                             self.cfg.commands.num_bins_body_roll),
+
+                                                stance_width = (self.cfg.commands.limit_stance_width[0],
+                                                                self.cfg.commands.limit_stance_width[1],
+                                                                self.cfg.commands.num_bins_stance_width),
+
+                                                stance_length = (self.cfg.commands.limit_stance_length[0],
+                                                                 self.cfg.commands.limit_stance_length[1],
+                                                                 self.cfg.commands.num_bins_stance_length),
+
+                                                aux_reward_coef = (self.cfg.commands.limit_aux_reward_coef[0],
+                                                                   self.cfg.commands.limit_aux_reward_coef[1],
+                                                                   self.cfg.commands.num_bins_aux_reward_coef)
+                                               )] # self.curricula self.curricala is a list with same size of self.category_names and contains
+            # RewardThresholdCurriculum class. just init that
+             
+        self.env_command_bins = np.zeros(len(envs_ids), dtype=np.int)
+        self.env_command_categories = np.zeros(len(envs_ids), dtype=np.int)
+        low = np.array(
+            [
+             self.cfg.commands.gait_frequency_cmd_range[0],
+             self.cfg.commands.gait_phase_cmd_range[0], self.cfg.commands.gait_offset_cmd_range[0],
+             self.cfg.commands.gait_bound_cmd_range[0], self.cfg.commands.gait_duration_cmd_range[0],
+             self.cfg.commands.footswing_height_range[0], self.cfg.commands.body_pitch_range[0],
+             self.cfg.commands.body_roll_range[0], self.cfg.commands.stance_width_range[0],
+             self.cfg.commands.stance_length_range[0], self.cfg.commands.aux_reward_coef_range[0],] )
+        high = np.array(
+            [
+             self.cfg.commands.gait_frequency_cmd_range[1],
+             self.cfg.commands.gait_phase_cmd_range[1], self.cfg.commands.gait_offset_cmd_range[1],
+             self.cfg.commands.gait_bound_cmd_range[1], self.cfg.commands.gait_duration_cmd_range[1], 
+             self.cfg.commands.footswing_height_range[1], self.cfg.commands.body_pitch_range[1],
+             self.cfg.commands.body_roll_range[1],self.cfg.commands.stance_width_range[1],
+             self.cfg.commands.stance_length_range[1], self.cfg.commands.aux_reward_coef_range[1],])
+
+        for curriculum in self.curricula:
+            curriculum.set_to(low=low, high=high)
+
+###################################### gait
 
 # ================================================ Rewards ================================================== #
 
@@ -976,6 +1244,7 @@ class GO1FreeEnv(LeggedRobot):
     def _reward_orientation(self):
         # Penalize non flat base orientation
         return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1)
+
     def _reward_base_height(self):
         # Penalize base height away from target
         base_height = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1)
@@ -984,6 +1253,7 @@ class GO1FreeEnv(LeggedRobot):
     def _reward_torques(self):
         # Penalize torques
         return torch.sum(torch.square(self.torques), dim=1)
+
     def _reward_dof_vel(self):
         # Penalize dof velocities
         return torch.sum(torch.square(self.dof_vel), dim=1)
@@ -1009,13 +1279,16 @@ class GO1FreeEnv(LeggedRobot):
         out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.) # lower limit
         out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
         return torch.sum(out_of_limits, dim=1)
+
     def _reward_dof_vel_limits(self):
         # Penalize dof velocities too close to the limit
         # clip to max error = 1 rad/s per joint to avoid huge penalties
         return torch.sum((torch.abs(self.dof_vel) - self.dof_vel_limits*self.cfg.rewards.soft_dof_vel_limit).clip(min=0., max=1.), dim=1)
+
     def _reward_torque_limits(self):
         # penalize torques too close to the limit
         return torch.sum((torch.abs(self.torques) - self.torque_limits*self.cfg.rewards.soft_torque_limit).clip(min=0.), dim=1)
+
     def _reward_tracking_lin_vel(self):
         # Tracking of linear velocity commands (xy axes)
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
@@ -1025,19 +1298,14 @@ class GO1FreeEnv(LeggedRobot):
         # Tracking of angular velocity commands (yaw) 
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
         return torch.exp(-ang_vel_error/self.cfg.rewards.tracking_sigma)
+
     def _reward_feet_air_time(self):
         # Reward long steps
         # Need to filter the contacts because the contact reporting of PhysX is unreliable on meshes
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
-        # print("self contact", contact)
-        # print('self last contact ', self.last_contacts)
-        # self contact forces  tensor([[ 0.0000,  0.0000,  0.0000, 34.8771]], device='cuda:0')
-        # contact  tensor([[False, False, False,  True]], device='cuda:0')
         contact_filt = torch.logical_or(contact, self.last_contacts) 
-        # print('contact filt', contact_filt)
         self.last_contacts = contact
         first_contact = (self.feet_air_time > 0.) * contact_filt
-        # print('feet air time', first_contact)
         self.feet_air_time += self.dt
         rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) # reward only on first contact with the ground
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
@@ -1052,6 +1320,224 @@ class GO1FreeEnv(LeggedRobot):
     def _reward_stand_still(self):
         # Penalize motion at zero commands
         return torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+
     def _reward_feet_contact_forces(self):
         # penalize high contact forces
         return torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) -  self.cfg.rewards.max_contact_force).clip(min=0.), dim=1)
+    
+
+################################### gate    
+    def _reward_jump(self):
+        reference_heights = 0
+        body_height = self.base_pos[:, 2] - reference_heights
+        jump_height_target = self.cfg.rewards.base_height_target
+        reward = - torch.square(body_height - jump_height_target)
+        return reward
+
+    def _init_custom_buffer__(self):
+        self.gait_indices = torch.zeros(self.num_envs, dtype=torch.float, device=self.device,
+                                requires_grad=False)
+        self.clock_inputs = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device,
+                                        requires_grad=False)
+    
+    def _init_command_distribution(self, env_ids):
+        # new style curriculum
+
+        self.category_names = ['pronk', 'trot', 'pace', 'bound']
+        CurriculumClass = RewardThresholdCurriculum
+        self.curricula = []
+        for category in self.category_names:
+            self.curricula += [CurriculumClass(seed=self.cfg.commands.curriculum_seed,
+                                               gait_frequency=(self.cfg.commands.limit_gait_frequency[0],
+                                                               self.cfg.commands.limit_gait_frequency[1],
+                                                               self.cfg.commands.num_bins_gait_frequency),
+                                               gait_phase=(self.cfg.commands.limit_gait_phase[0],
+                                                           self.cfg.commands.limit_gait_phase[1],
+                                                           self.cfg.commands.num_bins_gait_phase),
+                                               gait_offset=(self.cfg.commands.limit_gait_offset[0],
+                                                            self.cfg.commands.limit_gait_offset[1],
+                                                            self.cfg.commands.num_bins_gait_offset),
+                                               gait_bounds=(self.cfg.commands.limit_gait_bound[0],
+                                                            self.cfg.commands.limit_gait_bound[1],
+                                                            self.cfg.commands.num_bins_gait_bound),
+                                               gait_duration=(self.cfg.commands.limit_gait_duration[0],
+                                                              self.cfg.commands.limit_gait_duration[1],
+                                                              self.cfg.commands.num_bins_gait_duration),
+                                                footswing_height=(self.cfg.commands.limit_footswing_height[0],
+                                                                 self.cfg.commands.limit_footswing_height[1],
+                                                                 self.cfg.commands.num_bins_footswing_height),
+                                               body_pitch=(self.cfg.commands.limit_body_pitch[0],
+                                                           self.cfg.commands.limit_body_pitch[1],
+                                                           self.cfg.commands.num_bins_body_pitch),
+                                               body_roll=(self.cfg.commands.limit_body_roll[0],
+                                                          self.cfg.commands.limit_body_roll[1],
+                                                          self.cfg.commands.num_bins_body_roll),
+                                               stance_width=(self.cfg.commands.limit_stance_width[0],
+                                                             self.cfg.commands.limit_stance_width[1],
+                                                             self.cfg.commands.num_bins_stance_width),
+                                               stance_length=(self.cfg.commands.limit_stance_length[0],
+                                                                self.cfg.commands.limit_stance_length[1],
+                                                                self.cfg.commands.num_bins_stance_length),
+                                               aux_reward_coef=(self.cfg.commands.limit_aux_reward_coef[0],
+                                                                self.cfg.commands.limit_aux_reward_coef[1],
+                                                                self.cfg.commands.num_bins_aux_reward_coef)
+                                               )]
+        self.env_command_bins = np.zeros(len(env_ids), dtype=np.int)
+        self.env_command_categories = np.zeros(len(env_ids), dtype=np.int)
+        low = np.array(
+            [
+             self.cfg.commands.gait_frequency_cmd_range[0],
+             self.cfg.commands.gait_phase_cmd_range[0], self.cfg.commands.gait_offset_cmd_range[0],
+             self.cfg.commands.gait_bound_cmd_range[0], self.cfg.commands.gait_duration_cmd_range[0],
+             self.cfg.commands.footswing_height_range[0], self.cfg.commands.body_pitch_range[0],
+             self.cfg.commands.body_roll_range[0], self.cfg.commands.stance_width_range[0],
+             self.cfg.commands.stance_length_range[0], self.cfg.commands.aux_reward_coef_range[0],] )
+        high = np.array(
+            [
+             self.cfg.commands.gait_frequency_cmd_range[1],
+             self.cfg.commands.gait_phase_cmd_range[1], self.cfg.commands.gait_offset_cmd_range[1],
+             self.cfg.commands.gait_bound_cmd_range[1], self.cfg.commands.gait_duration_cmd_range[1], 
+             self.cfg.commands.footswing_height_range[1], self.cfg.commands.body_pitch_range[1],
+             self.cfg.commands.body_roll_range[1],self.cfg.commands.stance_width_range[1],
+             self.cfg.commands.stance_length_range[1], self.cfg.commands.aux_reward_coef_range[1],])
+        for curriculum in self.curricula:
+            curriculum.set_to(low=low, high=high)
+
+    def _reward_tracking_contacts_shaped_force(self): # TODO
+        foot_forces = torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1)
+        desired_contact = self.desired_contact_states
+
+        reward = 0
+        for i in range(4):
+            reward += - (1 - desired_contact[:, i]) * (
+                        1 - torch.exp(-1 * foot_forces[:, i] ** 2 / self.cfg.rewards.gait_force_sigma))
+        return reward / 4
+
+    def _reward_new_contact_shape(self):
+        foot_forces = torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1)
+        shall_contact = self.foot_indices < 0.5
+        in_contact = abs(foot_forces) > 0
+        # print(shall_contact.size())
+        # print(in_contact.size())
+        wrong_contact = in_contact * ~shall_contact 
+        wrong_contact2 = ~in_contact * shall_contact
+        correct_contact1 = in_contact * shall_contact
+        correct_contact2 = ~in_contact * ~shall_contact
+
+
+        foot_velocities = torch.norm(self.foot_velocities, dim=2).view(self.num_envs, -1)
+        in_velocities = foot_velocities > 0.1
+        shall_velocity = ~shall_contact
+        wrong_velocity1 = in_velocities * ~shall_velocity
+        wrong_velocity2 = ~in_velocities * shall_velocity
+        true_velocity1 = in_velocities  * shall_velocity
+        true_velocity2 = ~in_velocities * ~shall_velocity
+        # print(-wrong_contact.sum())
+        # return -wrong_contact.sum() - wrong_contact2.sum() + correct_contact1.sum() + correct_contact2.sum() - wrong_velocity1.sum() - wrong_velocity2.sum() + true_velocity1.sum() + true_velocity2.sum()
+        return  - wrong_velocity1.sum() - wrong_velocity2.sum() #+ true_velocity1.sum() + true_velocity2.sum()
+
+    def _reward_tracking_contacts_shaped_vel(self): # TODO
+        foot_velocities = torch.norm(self.foot_velocities, dim=2).view(self.num_envs, -1)
+        # print(foot_velocities.sum())
+        # print(foot_velocities.size())
+        desired_contact = self.desired_contact_states
+        reward = 0
+        for i in range(4):
+            reward += - (desired_contact[:, i] * (
+                        1 - torch.exp(-1 * foot_velocities[:, i] ** 2 / self.cfg.rewards.gait_vel_sigma)))
+        return reward / 4
+
+
+    def _reward_raibert_heuristic(self):
+        cur_footsteps_translated = self.foot_positions - self.base_pos.to(self.device).unsqueeze(1)
+
+        footsteps_in_body_frame = torch.zeros(self.num_envs, 4, 3, device=self.device)
+        for i in range(4):
+            footsteps_in_body_frame[:, i, :] = quat_apply_yaw(quat_conjugate(self.base_quat),
+                                                              cur_footsteps_translated[:, i, :])
+
+        # nominal positions: [FR, FL, RR, RL]
+        desired_stance_width = self.phases_info[:, 8:9]
+        desired_ys_nom = torch.cat([desired_stance_width / 2, -desired_stance_width / 2, desired_stance_width / 2, -desired_stance_width / 2], dim=1)
+        desired_stance_length = self.phases_info[:, 9:10]
+        desired_xs_nom = torch.cat([desired_stance_length / 2, desired_stance_length / 2, -desired_stance_length / 2, -desired_stance_length / 2], dim=1)
+
+        # raibert offsets
+        phases = torch.abs(1.0 - (self.foot_indices * 2.0)) * 1.0 - 0.5
+        
+        frequencies = self.phases_info[:, 0]
+        x_vel_des = self.commands[:, 0:1]
+        yaw_vel_des = self.commands[:, 2:3]
+        y_vel_des = yaw_vel_des * desired_stance_length / 2
+        desired_ys_offset = phases * y_vel_des * (0.5 / frequencies.unsqueeze(1))
+        desired_ys_offset[:, 2:4] *= -1
+        desired_xs_offset = phases * x_vel_des * (0.5 / frequencies.unsqueeze(1))
+
+        desired_ys_nom = desired_ys_nom + desired_ys_offset
+        desired_xs_nom = desired_xs_nom + desired_xs_offset
+
+        desired_footsteps_body_frame = torch.cat((desired_xs_nom.unsqueeze(2), desired_ys_nom.unsqueeze(2)), dim=2)
+
+        err_raibert_heuristic = torch.abs(desired_footsteps_body_frame - footsteps_in_body_frame[:, :, 0:2])
+
+        reward = torch.sum(torch.square(err_raibert_heuristic), dim=(1, 2))
+
+        return reward
+    
+    def _reward_action_smoothness_1(self): # TODO
+        # Penalize changes in actions
+        diff = torch.square(self.joint_pos_target[:, :self.num_actions] - self.last_joint_pos_target[:, :self.num_actions])
+        diff = diff * (self.last_actions[:, :self.num_dof] != 0)  # ignore first step
+        return torch.sum(diff, dim=1)
+
+    def _reward_action_smoothness_2(self):# TODO
+        # Penalize changes in actions
+        diff = torch.square(self.joint_pos_target[:, :self.num_actions] - 2 * self.last_joint_pos_target[:, :self.num_actions] + self.last_last_joint_pos_target[:, :self.num_actions])
+        diff = diff * (self.last_actions[:, :self.num_dof] != 0)  # ignore first step
+        diff = diff * (self.last_last_actions[:, :self.num_dof] != 0)  # ignore second step
+        return torch.sum(diff, dim=1)
+    
+    def _reward_feet_slip(self):
+        contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        contact_filt = torch.logical_or(contact, self.last_contacts)
+        self.last_contacts = contact
+        foot_velocities = torch.square(torch.norm(self.foot_velocities[:, :, 0:2], dim=2).view(self.num_envs, -1))
+        rew_slip = torch.sum(contact_filt * foot_velocities, dim=1)
+        return rew_slip
+
+    def _reward_feet_contact_vel(self):
+        reference_heights = 0
+        near_ground = self.foot_positions[:, :, 2] - reference_heights < 0.03
+        foot_velocities = torch.square(torch.norm(self.foot_velocities[:, :, 0:3], dim=2).view(self.num_envs, -1))
+        rew_contact_vel = torch.sum(near_ground * foot_velocities, dim=1)
+        return rew_contact_vel
+    
+    def _reward_feet_clearance_cmd_linear(self):
+        phases = 1 - torch.abs(1.0 - torch.clip((self.foot_indices * 2.0) - 1.0, 0.0, 1.0) * 2.0)
+        # print(phases)
+        foot_height = (self.foot_positions[:, :, 2]).view(self.num_envs, -1)# - reference_heights
+        target_height = self.phases_info[:, 5].unsqueeze(1) * phases + 0.02 # offset for foot radius 2cm
+        rew_foot_clearance = torch.square(target_height - foot_height) * (1 - self.desired_contact_states)
+        return torch.sum(rew_foot_clearance, dim=1)
+    
+    def _reward_feet_impact_vel(self):
+        prev_foot_velocities = self.prev_foot_velocities[:, :, 2].view(self.num_envs, -1)
+        contact_states = torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) > 1.0
+
+        rew_foot_impact_vel = contact_states * torch.square(torch.clip(prev_foot_velocities, -100, 0))
+
+        return torch.sum(rew_foot_impact_vel, dim=1)
+    
+    def _reward_orientation_control(self):
+        # Penalize non flat base orientation
+        roll_pitch_commands = self.phases_info[:, 6:8]
+        quat_roll = quat_from_angle_axis(-roll_pitch_commands[:, 1],
+                                         torch.tensor([1, 0, 0], device=self.device, dtype=torch.float))
+        quat_pitch = quat_from_angle_axis(-roll_pitch_commands[:, 0],
+                                          torch.tensor([0, 1, 0], device=self.device, dtype=torch.float))
+
+        desired_base_quat = quat_mul(quat_roll, quat_pitch)
+        desired_projected_gravity = quat_rotate_inverse(desired_base_quat, self.gravity_vec)
+
+        return torch.sum(torch.square(self.projected_gravity[:, :2] - desired_projected_gravity[:, :2]), dim=1)
+

@@ -36,9 +36,7 @@ from .go1.go1_config import GO1sim2simCfg, GO1sim2simCfgPPO
 from .go1.go1_env import GO1FreeEnv
 
 import os
-
 from sim2sim_leggedgym.utils.task_registry import task_registry
-
 
 task_registry.register( "iust", IUSTFreeEnv, IUSTsim2simCfg(), IUSTsim2simCfgPPO() )
 task_registry.register( "go1", GO1FreeEnv, GO1sim2simCfg(), GO1sim2simCfgPPO() )

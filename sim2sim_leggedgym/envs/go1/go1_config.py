@@ -35,9 +35,9 @@ class GO1sim2simCfg(LeggedRobotCfg):
     class env(LeggedRobotCfg.env):
         frame_stack = 15 #15
         c_frame_stack = 3 #3
-        num_single_obs = 48
+        num_single_obs = 56
         num_observations = int(frame_stack * num_single_obs) # 48*15 = 720
-        single_num_privileged_obs = 72 
+        single_num_privileged_obs = 57 
         num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) 
         num_actions = 12
         num_envs = 500
@@ -83,50 +83,63 @@ class GO1sim2simCfg(LeggedRobotCfg):
 
     class commands(LeggedRobotCfg.commands):
         curriculum = False
+        pacing_offset = False
         max_curriculum = 1.
-        num_commands = 4 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
+        num_commands = 8 # default: lin_vel_x, lin_vel_y, ang_vel_yaw, heading (in heading mode ang_vel_yaw is recomputed from heading error)
         resampling_time = 10. # time before command are changed[s]
         heading_command = False # if true: compute ang vel command from heading error
 
         ## gaits
         num_bins_gait_frequency = 1
+        limit_gait_frequency = [2, 4]
+
         num_bins_gait_phase = 1
-        num_bins_gait_offset = 1
-        num_bins_gait_bound = 1
-        num_bins_gait_duration = 1
-        num_bins_footswing_height = 1
-        num_bins_body_pitch = 1
-        num_bins_body_roll = 1
-        num_bins_aux_reward_coef = 1
-        num_bins_compliance = 1
-        num_bins_compliance = 1
-        num_bins_stance_width = 1
-        num_bins_stance_length = 1
-        limit_gait_offset = [0, 1]
-        limit_gait_bound = [0, 1]
         limit_gait_phase = [0, 1]
-        limit_gait_frequency = [2, 4] # [2 4 ]
+
+        num_bins_gait_offset = 1
+        limit_gait_offset = [0, 1]
+
+        num_bins_gait_bound = 1
+        limit_gait_bound = [0, 1]
+
+        num_bins_gait_duration = 1
         limit_gait_duration = [0.5, 0.5]
+        
+        num_bins_footswing_height = 1
         limit_footswing_height = [0.03, 0.35] #[0.06, 0.061] # if i change it i get error
+
+        num_bins_body_pitch = 1
         limit_body_pitch = [-0.4, 0.4]
+
+        num_bins_body_roll = 1
         limit_body_roll = [-0.0, 0.0]
+
+        num_bins_aux_reward_coef = 1
         limit_aux_reward_coef = [0.0, 0.01]
+
+        num_bins_compliance = 1
         limit_compliance = [0.0, 0.01]
+
+        num_bins_stance_width = 1
         limit_stance_width = [0.10, 0.45] #[0.0, 0.01]        # if i change it i get error
+
+        num_bins_stance_length = 1
         limit_stance_length =  [0.35, 0.45] # [0.0, 0.01]       # if i change it i get error
+        
         curriculum_seed = 100
-        gait_phase_cmd_range = [0.0, 1]
-        gait_offset_cmd_range = [0.0, 1]
-        gait_bound_cmd_range = [0.0, 1]
-        gait_frequency_cmd_range = [2, 4]#[2.0, 4]
+
+        gait_phase_cmd_range = [0.0, 1.0]
+        gait_offset_cmd_range = [0.0, 1.0]
+        gait_bound_cmd_range = [0.0, 1.0]
+        gait_frequency_cmd_range = [2.0, 4.0]
         gait_duration_cmd_range = [0.5, 0.5]
-        footswing_height_range = [0.03, 0.35] #[0.06, 0.061]
+        footswing_height_range = [0.03, 0.35] 
         body_pitch_range = [0.0, 0.01]
         body_roll_range = [0.0, 0.01]
         aux_reward_coef_range = [0.0, 0.01]
         compliance_range = [0.0, 0.01]
-        stance_width_range = [0.10, 0.45]# [0.0, 0.01]
-        stance_length_range = [0.35, 0.45] # [0.0, 0.01]
+        stance_width_range = [0.10, 0.45]
+        stance_length_range = [0.35, 0.45] 
         walkin_type = "trot"
         ### gaits
 
@@ -137,7 +150,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
             heading = [-3.14, 3.14]
 
     class init_state(LeggedRobotCfg.init_state):
-        pos = [0.0, 0.0, 0.4] # x,y,z [m]
+        pos = [0.0, 0.0, 2] # x,y,z [m]
         rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
 
         default_joint_angles = { # = target angles [rad] when action = 0.0
@@ -172,16 +185,16 @@ class GO1sim2simCfg(LeggedRobotCfg):
     class domain_rand(LeggedRobotCfg.domain_rand):
         num_buckets_friction = 64
         randomize_friction = True
-        friction_range = [0.35, 1.4]
+        friction_range = [0.5, 1.25]
 
-        randomize_base_mass = True
+        randomize_base_mass = False
         added_mass_range = [-1.2, 1.2]
 
         num_buckets_restitution = 64
-        randomize_restitution = True
+        randomize_restitution = False
         restitution_range = [0, 1.0]
 
-        randomize_com_displacement = True
+        randomize_com_displacement = False
         com_displacement_range = [-0.05, 0.05]
 
         randomize_joint_damping = False
@@ -190,7 +203,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
         randomize_joint_friction = False
         joint_friction_range = [0.05, 0.2]
 
-        push_robots = True
+        push_robots = False
         push_interval_s = 15
         max_push_vel_xy = 1
 
@@ -199,7 +212,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
 
         ### gaits
         lag_timesteps = 7
-        randomize_lag_timesteps = True
+        randomize_lag_timesteps = False
         ### gaits
 
     class safety:
@@ -221,63 +234,61 @@ class GO1sim2simCfg(LeggedRobotCfg):
   
     class rewards(LeggedRobotCfg.rewards):
         class scales(LeggedRobotCfg.rewards.scales):
-            termination = -0.0
-            tracking_lin_vel = 1.2
-            tracking_ang_vel = 0.8
-            lin_vel_z = -2.0
-            ang_vel_xy = -0.05
-            orientation = -0.
-            torques = -0.0002
-            dof_vel = -0.
-            dof_acc = -2.5e-7
-            base_height = -0. 
-            feet_air_time =  1.0
-            collision = -1.
-            feet_stumble = -0.0 
-            action_rate = -0.01
-            stand_still = -0.
-            dof_pos_limits = -10.0
-
-            ### gaits 
             # termination = -0.0
-            # tracking_lin_vel = 1 #1.2
-            # tracking_ang_vel =  0.5 # 0.7
-            # lin_vel_z = -0.4 #-2.0
-            # ang_vel_xy =  -0.
-            # orientation =  -300
-            # torques = -0.
+            # tracking_lin_vel = 1.2
+            # tracking_ang_vel = 0.8
+            # lin_vel_z = -2.0
+            # ang_vel_xy = -0.05
+            # orientation = -0.
+            # torques = -0.0002
             # dof_vel = -0.
-            # dof_acc = -1e-7
-            # base_height = 0
-            # feet_air_time = 0 #1.0
+            # dof_acc = -2.5e-7
+            # base_height = -0. 
+            # feet_air_time =  1.0
             # collision = -1.
             # feet_stumble = -0.0 
-            # action_rate =  -0.02
-            # stand_still =  -0
-            # jump =  10
-            # tracking_contacts_shaped_force = 1# 4 #1
-            # tracking_contacts_shaped_vel = 3
-            # raibert_heuristic = -10
-            # action_smoothness_1 = -0
-            # action_smoothness_2 = -0
-            # feet_clearance_cmd_linear = -5 #1
-            # feet_impact_vel =  0
-            # feet_slip = 0#-8e-4
-            # orientation_control =  -10
-            # new_contact_shape = 0.0
+            # action_rate = -0.01
+            # stand_still = -0.
+            # dof_pos_limits = -10.0
+
+            ### gaits 
+            termination = -0.0
+            tracking_lin_vel = 1 #1.2
+            tracking_ang_vel =  0.5 # 0.7
+            lin_vel_z = -0.4 #-2.0
+            ang_vel_xy =  -0.
+            orientation =  -300
+            torques = -0.
+            dof_vel = -0.
+            dof_acc = -1e-7
+            base_height = 0
+            feet_air_time = 0 #1.0
+            collision = -1.
+            feet_stumble = -0.0 
+            action_rate =  -0.02
+            stand_still =  -0
+            jump =  10
+            tracking_contacts_shaped_force = 1# 4 #1
+            tracking_contacts_shaped_vel = 3
+            raibert_heuristic = -10
+            action_smoothness_1 = -0
+            action_smoothness_2 = -0
+            feet_clearance_cmd_linear = -5 #1
+            feet_impact_vel =  0
+            feet_slip = 0#-8e-4
+            orientation_control =  -10
+            new_contact_shape = 0.0
             ### gaits
 
         
-        only_positive_rewards = True # if true negative total rewards are clipped at zero (avoids early termination problems)
-        soft_dof_pos_limit = 0.9
-        base_height_target = 0.25
+        only_positive_rewards = False # if true negative total rewards are clipped at zero (avoids early termination problems)
         cycle_time = 0.64
 
         ### gaits
         gait_force_sigma = 100
         kappa_gait_probs = 0.07
         gait_vel_sigma = 10
-        positive_rew_exp_negative_rew = False
+        positive_rew_exp_negative_rew = True
         sigma_rew_negative = 0.02
         tracking_sigma = 0.25 # tracking reward = exp(-error^2/sigma)
         soft_dof_pos_limit = 1. # percentage of urdf limits, values above this limit are penalized
@@ -287,7 +298,8 @@ class GO1sim2simCfg(LeggedRobotCfg):
         max_contact_force = 100. # forces above this value are penalized
         # ADDED 
         boddy_height_range = [0.3, 0.5]
-        
+        sigma_rew_neg = 0.02
+
         # base_height_target = 0.5
         ### gaits
 
@@ -303,7 +315,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
         clip_actions = 100.
 
     class noise(LeggedRobotCfg.noise):
-        add_noise = True # TODO False
+        add_noise = False # TODO False
         noise_level = 0.4 # scales other values
         class noise_scales(LeggedRobotCfg.noise.noise_scales):
             lin_vel = 1  #0.14
@@ -316,7 +328,7 @@ class GO1sim2simCfg(LeggedRobotCfg):
             height_measurements = 0.1
 
 class GO1sim2simCfgPPO( LeggedRobotCfgPPO ):
-    seed = -1 # -1 for random
+    seed = 1 # -1 for random
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
     class runner( LeggedRobotCfgPPO.runner ):

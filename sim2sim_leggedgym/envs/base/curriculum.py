@@ -19,42 +19,60 @@ class Curriculum:
         inds = np.logical_and(
             self.grid >= low[:, None],
             self.grid <= high[:, None]
-        ).all(axis=0)
+        ).all(axis=0) ## just true or false
 
         assert len(inds) != 0, "You are intializing your distribution with an empty domain!"
 
-        self.weights[inds] = value
+        self.weights[inds] = value ## just takes value 1 or 0
+        # print("###################inds", inds)
+        # print("###################self.weights", self.weights) # # The shape of self.weights and inds: (total combinations of all bins crossed together)
+        # print("###################self.grid", np.shape(self.grid)) # The shape of self.grid: (number of initialization inputs,
+        # total combinations of all bins crossed together)
 
     def __init__(self, seed, **key_ranges):
         self.rng = np.random.RandomState(seed)
+        # print("###################inds", self.rng) # RandomState(MT19937)
+        # print("################### key_ranges items", key_ranges.items()) # dict_items([('gait_frequency', (2, 4, 1)), ('gait_phase', (0, 1, 1)), ('gait_offset', (0, 1, 1)),
+        # ('gait_bounds', (0, 1, 1)), ('gait_duration', (0.5, 0.5, 1)), ('footswing_height', (0.03, 0.35, 1)), ('body_pitch', (-0.4, 0.4, 1)), ('body_roll', (-0.0, 0.0, 1)), 
+        # ('stance_width', (0.1, 0.45, 1)), ('stance_length', (0.35, 0.45, 1)), ('aux_reward_coef', (0.0, 0.01, 1))])
 
         self.cfg = cfg = {}
         self.indices = indices = {}
         for key, v_range in key_ranges.items():
-            bin_size = (v_range[1] - v_range[0]) / v_range[2]
-            cfg[key] = np.linspace(v_range[0] + bin_size / 2, v_range[1] - bin_size / 2, v_range[2])
-            indices[key] = np.linspace(0, v_range[2]-1, v_range[2])
-
-        self.lows = np.array([range[0] for range in key_ranges.values()])
+            # print("################### v_range", type(v_range)) # a touple with three value for each key
+            bin_size = (v_range[1] - v_range[0]) / v_range[2] # compute size of each bin
+            cfg[key] = np.linspace(v_range[0] + bin_size / 2, v_range[1] - bin_size / 2, v_range[2]) # Compute bin centers by adding bin_size/2 to low and high ranges
+            indices[key] = np.linspace(0, v_range[2]-1, v_range[2]) # index of each bin
+            # print("###################### bin_size", cfg)
+        self.lows = np.array([range[0] for range in key_ranges.values()]) 
         self.highs = np.array([range[1] for range in key_ranges.values()])
+        # size of lows and highs is np array (number of initialization inputs)
+
 
         # self.bin_sizes = {key: arr[1] - arr[0] for key, arr in cfg.items()}
-        self.bin_sizes = {key: (v_range[1] - v_range[0]) / v_range[2] for key, v_range in key_ranges.items()}
+        self.bin_sizes = {key: (v_range[1] - v_range[0]) / v_range[2] for key, v_range in key_ranges.items()} # A dictionary containing the bin size for each initialization input.
+        # print("###################################### self.bin_sizes", self.bin_sizes)
 
-        self._raw_grid = np.stack(np.meshgrid(*cfg.values(), indexing='ij'))
+        self._raw_grid = np.stack(np.meshgrid(*cfg.values(), indexing='ij')) # The shape (11, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1) indicates that there are 11 initialization inputs. 
+        # The first dimension represents the number of inputs, and each subsequent dimension corresponds to the number of bins (or center bins) for each respective input.
+
+        # print("############################## self rew grid", np.shape(self._raw_grid))
         self._idx_grid = np.stack(np.meshgrid(*indices.values(), indexing='ij'))
         self.keys = [*key_ranges.keys()]
-        self.grid = self._raw_grid.reshape([len(self.keys), -1])
+        self.grid = self._raw_grid.reshape([len(self.keys), -1]) # at last self._raw_grid become shape(number of initialization inputs, bin1 * bin2 * bin3 ....) . 
+        # each column in self.grid represents one unique combination of all your parameters.
         self.idx_grid = self._idx_grid.reshape([len(self.keys), -1])
         # self.grid = np.stack([params.flatten() for params in raw_grid])
 
-        self._l = l = len(self.grid[0])
+        self._l = l = len(self.grid[0]) # l is bin1 * bin2 * bin3 ....
+        # print("############################ self._l", self._l)
         self.ls = {key: len(self.cfg[key]) for key in self.cfg.keys()}
 
         self.weights = np.zeros(l)
         self.indices = np.arange(l)
 
     def __len__(self):
+
         return self._l
 
     def __getitem__(self, *keys):
@@ -130,27 +148,60 @@ class RewardThresholdCurriculum(Curriculum):
             self.grid[:, None, :].repeat(bin_inds.shape[0], axis=1) <= self.grid[:, bin_inds, None] + ranges.reshape(-1, 1, 1)
         ).all(axis=0)
 
+        # This method identifies the bins in the grid that are within a specified range of the given bin indices (bin_inds).
+        # If 'ranges' is a float, it is applied uniformly across all grid dimensions. The method compares each bin's position
+        # with the positions of the bins in bin_inds and returns a boolean array (adjacent_inds), where True indicates a bin is 
+        # within the specified range of at least one of the bins in bin_inds.
+
         return adjacent_inds
 
     def update(self, bin_inds, task_rewards, success_thresholds, local_range=0.5):
+        
+        # print("#########################################", bin_inds) # previous bin index for terminated env
+        # print("############################################ task rewards", task_rewards)
 
         is_success = 1.
         for task_reward, success_threshold in zip(task_rewards, success_thresholds):
             is_success = is_success * (task_reward > success_threshold).cpu()
+            # print("################################### is_success", (task_reward > success_threshold))
+
+        # Initialize is_success as 1 (indicating full success).
+        # Iterate through each task's reward and success threshold.
+        # For each task, compare the reward with its threshold (task_reward > success_threshold).
+        # If the reward exceeds the threshold, the comparison returns True (1), otherwise False (0).
+        # Multiply the current value of is_success by the result of each comparison.
+        # If all tasks succeed, is_success remains 1; if any task fails, is_success becomes 0.
+        #  is_success * (task_reward > success_threshold).cpu() is 0.0 or 1.0, when you multiply a float by a 
+        # boolean, the boolean is automatically converted to a float
+        
         if len(success_thresholds) == 0:
             is_success = np.array([False] * len(bin_inds))
         else:
             is_success = np.array(is_success.bool())
+        
+        # just convert to bool. an array that has a bool object
 
+         
         # if len(is_success) > 0 and is_success.any():
         #     print("successes")
 
         self.weights[bin_inds[is_success]] = np.clip(self.weights[bin_inds[is_success]] + 0.2, 0, 1)
+        # Update the weights of the bins that were successful (where is_success is True).
+        # Add 0.2 to the current weight of the bin, ensuring the new value is clipped between 0 and 1.
+        
+        
+        # Get the bins that are adjacent to the bins in bin_inds where the task was successful (is_success is True)
+        # The method get_local_bins returns a boolean array indicating which bins are within the specified local_range.
         adjacents = self.get_local_bins(bin_inds[is_success], ranges=local_range)
+        
+
+        # Iterate through each adjacent bin (adjacent corresponds to each successful task's adjacent bins)
         for adjacent in adjacents:
             #print(adjacent)
             #print(self.grid[:, adjacent])
+            # Find the indices of bins that are considered "adjacent" (where the value is True in the boolean array)
             adjacent_inds = np.array(adjacent.nonzero()[0])
+            # Update the weights of the adjacent bins: Add 0.2 to their current weights and clip the result between 0 and 1
             self.weights[adjacent_inds] = np.clip(self.weights[adjacent_inds] + 0.2, 0, 1)
 
     def log(self, bin_inds, lin_vel_raw=None, ang_vel_raw=None, episode_duration=None):
