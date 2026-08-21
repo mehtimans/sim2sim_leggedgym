@@ -1,1 +1,12 @@
-logs/
+logs/*
+
+!logs/go1/
+!logs/go1/.gitkeep
+
+!logs/iust/
+!logs/iust/.gitkeep
+
+__pycache__/
+*.pyc
+*.egg-info/
+.vscode/
