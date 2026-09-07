@@ -8,6 +8,7 @@ In addition to training in Isaac Gym, the repository provides an **Isaac Gym-to-
 
 The framework also includes support for the custom **IUST quadruped robot**, enabling the same training and sim-to-sim workflow to be applied to different quadruped platforms.
 
+<img src="images/sim2sim.gif" width=700>
 ---
 ### Installation ###
 
